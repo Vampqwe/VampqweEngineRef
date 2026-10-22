@@ -65,7 +65,7 @@ class ConfigFileParser
             'admin' => ['label' => 'Админ-панель', 'icon' => '️'],
         ];
 
-        $sections[$currentSection] = ['label' => 'Общие', 'icon' => '⚙️', 'keys' => [], 'comments' => []];
+        $sections[$currentSection] = ['label' => 'Общие', 'icon' => '⚙️', 'keys' => [], 'commented_keys' => [], 'comments' => []];
         $lineIndex = 0;
 
         foreach ($lines as $line) {
@@ -79,63 +79,62 @@ class ConfigFileParser
 
             // 2. Комментарий с #
             if (str_starts_with($trimmed, '#')) {
-                $text = substr($trimmed, 1);
-
-                // Проверяем, является ли это разделителем секции: # ═══ НАЗВАНИЕ ═══
-                if (preg_match('/^\s*[═\-=]{2,}\s*(.+?)\s*[═\-=]{2,}\s*$/u', $text, $m)) {
-                    $title = trim($m[1]);
-                    $sectionName = $this->slugifySection($title);
-                    $currentSection = $sectionName;
-                    if (!isset($sections[$currentSection])) {
-                        $sections[$currentSection] = [
-                            'label' => $sectionLabels[$sectionName]['label'] ?? $title,
-                            'icon' => $sectionLabels[$sectionName]['icon'] ?? '📦',
-                            'keys' => [],
-                            'comments' => [],
+                // Разделитель секции: "# ===== НАЗВАНИЕ =====", "# ═══ НАЗВАНИЕ ═══"
+                // или просто заголовок из одних букв/пробелов "# СУПЕР-АДМИНИСТРАТОР".
+                if ($this->isSectionHeader($trimmed)) {
+                    $title = preg_replace('/^#+\s*|\s*[═=\-#]+\s*$/', '', $trimmed) ?? '';
+                    $title = trim($title);
+                    if ($title !== '') {
+                        $sectionName = $this->slugifySection($title);
+                        $currentSection = $sectionName;
+                        if (!isset($sections[$currentSection])) {
+                            $sections[$currentSection] = [
+                                'label' => $sectionLabels[$sectionName]['label'] ?? $title,
+                                'icon' => $sectionLabels[$sectionName]['icon'] ?? '📦',
+                                'keys' => [],
+                                'commented_keys' => [],
+                                'comments' => [],
+                            ];
+                        }
+                        $sections[$currentSection]['comments'][] = [
+                            'type' => 'section-divider',
+                            'label' => $title,
+                            'line' => $lineIndex,
                         ];
+                        continue;
                     }
-                    $sections[$currentSection]['comments'][] = [
-                        'type' => 'section-divider',
-                        'label' => $title,
-                        'line' => $lineIndex,
-                    ];
-                } else {
-                    // Обычный комментарий
-                    $sections[$currentSection]['comments'][] = [
-                        'type' => 'comment',
-                        'text' => ltrim($text),
-                        'line' => $lineIndex,
-                    ];
                 }
-                continue;
-            }
-
-            // 3. Ключ=значение
-            if (preg_match('/^([A-Z0-9_]+)=(.*)$/', $trimmed, $m)) {
-                $key = $m[1];
-                $value = $m[2];
-                $type = $this->detectType($key, $value);
-                $isSensitive = in_array($key, self::SENSITIVE_KEYS, true);
-                $isReadonly = in_array($key, self::READONLY_KEYS, true);
-
-                $sections[$currentSection]['keys'][] = [
-                    'key' => $key,
-                    'value' => $value,
-                    'type' => $type,
-                    'sensitive' => $isSensitive,
-                    'readonly' => $isReadonly,
+                // Закомментированная опция: "# KEY=VALUE" — выводим отдельным списком
+                if (preg_match('/^#+\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/', $trimmed, $m)) {
+                    $row = $this->buildKeyRow(
+                        strtoupper($m[1]), $this->unquoteValue(trim($m[2])), $lineIndex, true
+                    );
+                    $sections[$currentSection]['commented_keys'][] = $row;
+                    continue;
+                }
+                // Обычный комментарий
+                $sections[$currentSection]['comments'][] = [
+                    'type' => 'comment',
+                    'text' => ltrim(substr($trimmed, 1)),
                     'line' => $lineIndex,
-                    'changed' => false,
                 ];
                 continue;
             }
 
-            // 4. Всё остальное — игнорируем (или можно считать комментарием без #)
+            // 3. Активная опция: KEY=VALUE (допускается "export " и пробелы вокруг "=")
+            if (preg_match('/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/', $trimmed, $m)) {
+                $sections[$currentSection]['keys'][] = $this->buildKeyRow(
+                    strtoupper($m[1]), $this->unquoteValue(trim($m[2])), $lineIndex, false
+                );
+                continue;
+            }
+
+            // 4. Всё остальное — не конфигурационная строка, игнорируем
         }
 
         // Удаляем пустые секции
         $sections = array_filter($sections, function ($s) {
-            return !empty($s['keys']) || !empty($s['comments']);
+            return !empty($s['keys']) || !empty($s['comments']) || !empty($s['commented_keys'] ?? []);
         });
 
         return [
@@ -150,7 +149,11 @@ class ConfigFileParser
         ];
     }
 
-    public function saveChanges(array $changes): array
+    /**
+     * @param array<string,string> $changes   активные ключи => новые значения
+     * @param string[]             $uncomment закомментированные ключи для раскомментирования
+     */
+    public function saveChanges(array $changes, array $uncomment = []): array
     {
         $file = $this->basePath . DIRECTORY_SEPARATOR . 'config.env';
 
@@ -177,14 +180,36 @@ class ConfigFileParser
             }
         }
 
-        if (empty($changes)) {
+        $uncomment = array_values(array_filter(array_map(
+            static fn($k) => is_string($k) ? strtoupper(trim($k)) : '',
+            $uncomment
+        ), static fn($k) => $k !== '' && preg_match('/^[A-Z0-9_]+$/', $k)));
+
+        if (empty($changes) && empty($uncomment)) {
             return ['ok' => false, 'errors' => $errors ?: ['Нет изменений для сохранения'], 'changed' => 0];
         }
 
+        $keysSaved = [];
         $this->backupConfig($file);
 
         $content = file_get_contents($file);
         $changed = 0;
+
+        // Раскомментирование: "# KEY=..." -> "KEY=..." (только если ключ ещё не активен)
+        foreach ($uncomment as $key) {
+            if (array_key_exists($key, $changes)) {
+                continue; // значение и так будет обновлено в активной строке
+            }
+            $pattern = '/^([ \t]*)#+[ \t]*(' . preg_quote($key, '/') . '\s*=)/m';
+            $count = 0;
+            $content = preg_replace_callback($pattern, static function ($mm) {
+                return $mm[1] . $mm[2];
+            }, $content, 1, $count);
+            if ($count > 0) {
+                $changed++;
+                $keysSaved[] = $key;
+            }
+        }
 
         foreach ($changes as $key => $value) {
             $pattern = '/^' . preg_quote($key, '/') . '=(.*)$/m';
@@ -193,6 +218,7 @@ class ConfigFileParser
                     return $key . '=' . $value;
                 }, $content);
                 $changed++;
+                $keysSaved[] = $key;
             }
         }
 
@@ -204,7 +230,7 @@ class ConfigFileParser
 
         try {
             $this->security->getAuditLogger()->logAction('config.edit', 'config', null, [
-                'changed_keys' => array_keys($changes),
+                'changed_keys' => $keysSaved ?: array_keys($changes),
             ]);
         } catch (\Throwable $e) {
             error_log('Config audit failed: ' . $e->getMessage());
@@ -213,10 +239,71 @@ class ConfigFileParser
         return ['ok' => true, 'errors' => $errors, 'changed' => $changed];
     }
 
+    /**
+     * Собирает строку опции для вывода в админке.
+     */
+    private function buildKeyRow(string $key, string $value, int $line, bool $commented): array
+    {
+        return [
+            'key' => $key,
+            'value' => $value,
+            'type' => $this->detectType($key, $value),
+            'sensitive' => in_array($key, self::SENSITIVE_KEYS, true),
+            'readonly' => in_array($key, self::READONLY_KEYS, true),
+            'commented' => $commented,
+            'line' => $line,
+            'changed' => false,
+        ];
+    }
+
+    /**
+     * Снимает обрамляющие кавычки ("..."/'...') со значения.
+     */
+    private function unquoteValue(string $value): string
+    {
+        if (strlen($value) >= 2) {
+            $first = $value[0];
+            $last = $value[strlen($value) - 1];
+            if (($first === '"' && $last === '"') || ($first === "'" && $last === "'")) {
+                $inner = substr($value, 1, -1);
+                if ($first === '"') {
+                    $inner = str_replace(['\\n', '\\t', '\\"', '\\\\'], ["\n", "\t", '"', '\\'], $inner);
+                } else {
+                    $inner = str_replace("\\'", "'", $inner);
+                }
+                return $inner;
+            }
+        }
+        return $value;
+    }
+
+    /**
+     * Определяет заголовок/разделитель секции: строка из "#" с декоративными
+     * символами (═ = -) и текстом без "=", либо просто строка из "=====".
+     */
+    private function isSectionHeader(string $trimmed): bool
+    {
+        if (!preg_match('/^#+[^A-Za-z0-9]*$/', $trimmed)) {
+            // не чистый разделитель — проверяем вариант "# ═══ ТЕКСТ ═══"
+            $body = preg_replace('/^#+\s*/', '', $trimmed) ?? '';
+            if (!preg_match('/^[═=\-]+\s*\S.*$/', $body)) {
+                return false;
+            }
+            // заголовок не должен быть закомментированной опцией KEY=...
+            if (preg_match('/^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=/', $body)) {
+                return false;
+            }
+            $inner = preg_replace('/^\s*[═=\-]+\s*|\s*[═=\-]+\s*$/', '', $body) ?? '';
+            return trim($inner) !== '' && !str_contains($inner, '=');
+        }
+        return true; // "# =====" без текста — тоже разделитель (title пустой)
+    }
+
     private function detectType(string $key, string $value): string
     {
         if (in_array($key, self::SENSITIVE_KEYS, true)) return 'sensitive';
-        if (in_array($value, ['true', 'false', '0', '1'], true)) return 'bool';
+        if ($value === '') return 'empty';
+        if (in_array(strtolower($value), ['true', 'false', '0', '1'], true)) return 'bool';
         if (ctype_digit($value) || (str_starts_with($value, '-') && ctype_digit(substr($value, 1)))) return 'int';
         if (filter_var($value, FILTER_VALIDATE_URL)) return 'url';
         if (filter_var($value, FILTER_VALIDATE_EMAIL)) return 'email';

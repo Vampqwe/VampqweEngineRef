@@ -24,40 +24,39 @@ class ConfigViewerController
     ) {}
 
     public function index(Request $request): Response
-{
-    error_log('ConfigViewerController::index() START');
+    {
+        if (!$this->isSuperAdmin()) {
+            $this->adminService->setFlash('error', 'Доступ запрещён.');
+            return Response::redirect('/admin');
+        }
 
-    try {
-        error_log('ConfigViewerController: parser = ' . get_class($this->parser));
-        error_log('ConfigViewerController: calling parse()');
+        try {
+            $data = $this->parser->parse();
+        } catch (\Throwable $e) {
+            error_log('ConfigViewerController ERROR: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            $data = [
+                'sections' => [],
+                'meta' => [
+                    'error' => 'Ошибка парсера: ' . $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ],
+            ];
+        }
 
-        $data = $this->parser->parse();
+        $flash = $this->adminService->getFlash();
 
-        error_log('ConfigViewerController: parse() returned sections: ' . count($data['sections'] ?? []));
-    } catch (\Throwable $e) {
-        error_log('ConfigViewerController ERROR: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-        $data = [
-            'sections' => [],
-            'meta' => [
-                'error' => 'Ошибка парсера: ' . $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ]
-        ];
+        $html = $this->template->render('admin/config/index', [
+            'title' => 'Редактор config.env',
+            'data' => $data,
+            'flash' => $flash,
+            'type_labels' => self::TYPE_LABELS,
+            'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_meta' => $this->security->getCsrfToken()->getMetaTag(),
+        ]);
+
+        return Response::html($html);
     }
-
-    $flash = $this->adminService->getFlash();
-
-    $html = $this->template->render('admin/config/index', [
-        'title' => 'Редактор config.env',
-        'data' => $data,
-        'flash' => $flash,
-        'csrf_token' => $this->security->getCsrfToken()->getToken(),
-        'csrf_meta' => $this->security->getCsrfToken()->getMetaTag(),
-    ]);
-
-    return Response::html($html);
-}
 
     public function save(Request $request): Response
     {
@@ -67,15 +66,17 @@ class ConfigViewerController
         }
 
         $changes = [];
+        $uncomment = [];
         $post = $request->allPost();
         foreach ($post as $key => $value) {
             if (str_starts_with($key, 'cfg_')) {
-                $realKey = substr($key, 4);
-                $changes[$realKey] = (string) $value;
+                $changes[substr($key, 4)] = (string) $value;
+            } elseif (str_starts_with($key, 'uncmt_')) {
+                $uncomment[] = substr($key, 6);
             }
         }
 
-        $result = $this->parser->saveChanges($changes);
+        $result = $this->parser->saveChanges($changes, $uncomment);
 
         if (!$result['ok']) {
             $this->adminService->setFlash('error', implode('; ', $result['errors']));
@@ -96,19 +97,16 @@ class ConfigViewerController
         return $superEmail !== '' && strcasecmp((string) ($admin['email'] ?? ''), $superEmail) === 0;
     }
 
-    private function typeLabel(string $type): string
-    {
-        return match ($type) {
-            'bool' => 'логическое',
-            'int' => 'число',
-            'url' => 'URL',
-            'email' => 'email',
-            'ip' => 'IP/CIDR',
-            'hash' => 'хеш',
-            'password_hash' => 'bcrypt',
-            'sensitive' => 'секрет',
-            'text' => 'текст',
-            default => $type,
-        };
-    }
+    private const TYPE_LABELS = [
+        'bool' => 'логическое',
+        'empty' => 'пусто',
+        'int' => 'число',
+        'url' => 'URL',
+        'email' => 'email',
+        'ip' => 'IP/CIDR',
+        'hash' => 'хеш',
+        'password_hash' => 'bcrypt',
+        'sensitive' => 'секрет',
+        'text' => 'текст',
+    ];
 }
