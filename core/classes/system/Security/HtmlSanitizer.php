@@ -98,6 +98,47 @@ class HtmlSanitizer
     }
 
     /**
+     * Контент страницы «как есть»: сохраняются ВСЕ теги исходного HTML
+     * (<svg>, <style>, <script>, <form> и т.д.), но вырезаются XSS-векторы:
+     *  - обработчики событий on* (атрибуты и строки «onload=» внутри JS/CSS);
+     *  - опасные URL-схемы javascript:/vbscript:/data:text/html в href/src/…;
+     *  - векторы внутри CSS: expression(), @import, behavior:, url(javascript:…).
+     *
+     * Используется импортером (ImportController::sanitizeImportedContent) и
+     * шаблоном при отдаче страниц (Template::trustedHtml) — иначе DOM round-trip
+     * и REMOVE_WITH_CONTENT уничтожали стили/SVG импортом.
+     */
+    public static function cleanAsIs(string $html): string
+    {
+        if ($html === '') {
+            return '';
+        }
+
+        // 1. on*-обработчики в атрибутах (только вне строк JS/CSS — там они
+        //    легитимны: addEventListener('load'...) не совпадёт с паттерном).
+        $html = preg_replace('~\son[a-z]+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i', '', $html) ?? $html;
+
+        // 2. Опасные URL-схемы в атрибутах (data:image/* остаётся разрешённым).
+        $html = preg_replace(
+            '~\b(href|src|xlink:href|action|formaction|cite|background)\s*=\s*(["\'])\s*(?:javascript|vbscript)\s*:([^"\']*)\2~i',
+            '$1=$2#$3$2',
+            $html
+        ) ?? $html;
+        $html = preg_replace(
+            '~\b(href|src|xlink:href|action|formaction|cite|background)\s*=\s*(["\'])\s*data:\s*(?:text/html|application)~i',
+            '$1=$2#blocked-$2',
+            $html
+        ) ?? $html;
+
+        // 3. Векторы внутри <style>/inline-style.
+        foreach (self::DANGEROUS_CSS_PATTERNS as $pattern) {
+            $html = preg_replace($pattern, '/* blocked */', $html) ?? $html;
+        }
+
+        return $html;
+    }
+
+    /**
      * Sanitization for imported page content: dangerous elements are removed,
      * but <style>/<script> tags and their text survive intact.
      *
@@ -129,7 +170,7 @@ class HtmlSanitizer
         $cfg = self::config();
         $cleaned = self::purify(
             $protected,
-            (array) ($cfg['allowed_tags'] ?? self::ALLOWED_TAGS),
+            array_merge((array) ($cfg['allowed_tags'] ?? self::ALLOWED_TAGS), ['button']),
             self::allowedAttributes()
         );
 

@@ -57,6 +57,10 @@ return [
      *  - 'fallback_xpath': (marker) если маркеры не найдены — взять узел по XPath.
      *  - 'required'     : true — отсутствие содержимого блока = ошибка импорта.
      *  - 'strip_wrapper': (marker/xpath) снимать ли служебную обёртку <!DOCTYPE/html/head/body>.
+     *  - 'preserve_raw' : (marker) байт-в-байт срез между маркерами в БД, без
+     *                     DOM round-trip; иначе libxml приводит атрибуты к
+     *                     нижнему регистру (viewBox → viewbox) и разворачивает
+     *                     самозакрывающиеся теги SVG (<path/> → <path></path>).
      *  - 'download_images': (marker/xpath) скачивать ли внешние <img> из блока.
      *  - 'target'       : куда писать:
      *        ['table' => 'pages', 'column' => 'content']            — обычная колонка;
@@ -109,6 +113,10 @@ return [
             'strip_wrapper'  => true,
             'download_images' => true,
             'verify_integrity' => true,
+            // Контент в БД попадает ПОБАЙТНО как есть: без DOM round-trip,
+            // иначе libxml принудительно строчные атрибуты (viewbox вместо
+            // viewBox) и разворачивает самозакрытие SVG (<path/> → <path></path>).
+            'preserve_raw' => true,
             'required' => true,
             'target'   => ['table' => 'pages', 'column' => 'content'],
         ],

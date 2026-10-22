@@ -350,6 +350,8 @@ class HtmlImportParser
                 'strip_wrapper' => true,
                 'verify_integrity' => true,
                 'download_images' => true,
+                // Контент побайтно «как есть» (см. docblock preserve_raw в конфиге)
+                'preserve_raw' => true,
                 'target' => ['table' => 'pages', 'column' => 'content'],
             ],
             'schema' => [
@@ -427,7 +429,21 @@ class HtmlImportParser
                     // Отбрасываем закрывающие теги контейнеров, попавшие в начало среза
                     $raw = preg_replace('~^\s*</(main|div|section|article|body|html)\s*>~iu', '', $raw, 1) ?? $raw;
 
-                    $result['value'] = $this->normalizeFragment($raw, $block, $name);
+                    // preserve_raw: контент идёт в БД побайтно, без DOM round-trip
+                    // (DOMDocument принудительно строчные атрибуты — viewbox вместо
+                    // viewBox — и разворачивает <path/> в <path></path>).
+                    if (!empty($block['preserve_raw'])) {
+                        $value = $raw;
+                        if (!empty($block['verify_integrity'])) {
+                            $this->verifyContentIntegrity($value, $raw);
+                        }
+                        if (!empty($block['download_images'])) {
+                            $value = $this->downloadAndReplaceImages($value);
+                        }
+                        $result['value'] = $value;
+                    } else {
+                        $result['value'] = $this->normalizeFragment($raw, $block, $name);
+                    }
                     $result['found'] = trim(strip_tags($result['value'])) !== '' || trim($result['value']) !== '';
                     $result['meta']['marker'] = 'exact';
                 } elseif (!empty($block['fallback_xpath'])) {
