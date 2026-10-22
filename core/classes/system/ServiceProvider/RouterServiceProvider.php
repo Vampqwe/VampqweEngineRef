@@ -160,7 +160,6 @@ class RouterServiceProvider extends ServiceProvider
 
             $mime = match (strtolower(pathinfo($real, PATHINFO_EXTENSION))) {
                 'css'         => 'text/css; charset=UTF-8',
-                'js'          => 'application/javascript; charset=UTF-8',
                 'png'         => 'image/png',
                 'jpg', 'jpeg' => 'image/jpeg',
                 'gif'         => 'image/gif',
@@ -168,7 +167,7 @@ class RouterServiceProvider extends ServiceProvider
                 'svg'         => 'image/svg+xml',
                 default       => 'application/octet-stream',
             };
-            if (!in_array($mime, ['text/css; charset=UTF-8', 'application/javascript; charset=UTF-8', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'], true)) {
+            if (!in_array($mime, ['text/css; charset=UTF-8', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'], true)) {
                 return Response::text('Not Found', StatusCode::NOT_FOUND);
             }
 
