@@ -687,23 +687,66 @@ class HtmlImportParser
         }
 
         $tailOffset = $start;
-        // Поиск end-маркера стартует на 1 байт раньше конца start-маркера:
-        // литеральные паттерны '<...>' и '<!--...-->' допускают гибкие границы,
-        // и без отступа тот же самый start-маркер мог бы быть найден как end.
-        $searchFrom = max(0, $tailOffset - 1);
-        $end = $this->findMarkerOffset(substr($html, $searchFrom), $block['end'] ?? null, 'end');
 
-        return [$start, $end === null ? null : $searchFrom + $end];
+        // Токены start-маркера (ядро без не-буквенных символов, нижний регистр),
+        // которые запрещено принимать за end-маркер.
+        $forbidden = $this->markerTokens($block['start'] ?? null);
+
+        // Гибкие литеральные паттерны допускают лишние символы на границах,
+        // поэтому найденный end может «зацепить» хвост start-маркера (префикс).
+        // Сдвигаем точку поиска до конца самого длинного зацепленного префикса.
+        if ($forbidden !== []) {
+            $head = strtolower((string) substr($html, max(0, $tailOffset - 16), 16));
+            foreach ($forbidden as $token) {
+                for ($len = min(16, strlen($token)); $len >= 1; $len--) {
+                    if (str_ends_with($head, substr($token, 0, $len))) {
+                        $tailOffset += $len;
+                        break;
+                    }
+                }
+            }
+        }
+
+        $end = $this->findMarkerOffset(substr($html, $tailOffset), $block['end'] ?? null, 'end', $forbidden);
+
+        return [$start, $end === null ? null : $tailOffset + $end];
     }
 
     /**
-     * Ищет одно вхождение маркера. Возвращает смещение КОНЦА найденного
-     * маркера (int) или null.
+     * Ядра маркеров в нижнем регистре (все буквы/цифры/подчёркивания по порядку).
+     *
+     * @return string[]
      */
-    private function findMarkerOffset(string $html, mixed $marker, string $side): ?int
+    private function markerTokens(mixed $marker): array
+    {
+        $tokens = [];
+        $items = is_array($marker) ? $marker : [$marker];
+        foreach ($items as $m) {
+            if (!is_string($m)) {
+                continue;
+            }
+            $raw = trim($m);
+            if ($raw === '' || $this->looksLikePcre($raw)) {
+                continue;
+            }
+            $core = strtolower((string) preg_replace('~[^A-Za-z0-9_]~u', '', $raw));
+            if ($core !== '') {
+                $tokens[] = $core;
+            }
+        }
+
+        return $tokens;
+    }
+
+    /**
+     * Строит список PCRE-паттернов для литерального маркера (или готовой PCRE).
+     *
+     * @return string[]
+     */
+    private function markerPatterns(mixed $marker): array
     {
         if ($marker === null || $marker === '') {
-            return null;
+            return [];
         }
 
         $patterns = [];
@@ -716,19 +759,20 @@ class HtmlImportParser
                 // разделитель вида <---nav---> / <-- nav --> (регистронезависимо,
                 // гибкие пробелы между словами).
                 $raw = trim($marker);
-                $isComment = preg_match('~^<!--.*-->$~s', $raw) === 1;
-                if ($isComment) {
-                    // Комментарий: снимаете обрамление '<!--' ... '-->', внутри — имя маркера.
+                if (preg_match('~^<!--.*-->$~s', $raw) === 1) {
+                    // Комментарий: снимаем обрамление '<!--' ... '-->', внутри — имя маркера.
                     $inner = trim((string) preg_replace('~^<!--\s*|\s*-->$~', '', $raw));
                     // 'ОСНОВНОЙ КОНТЕНТ' и т.п.: одинарные пробелы → гибкие \s*
                     $flexible = str_replace(' ', '\\s*', preg_quote($inner, '~'));
                     $patterns[] = '~<!--[<\\s-]*\\s*' . $flexible . '\\s*[>\\s-]*-->~iu';
                 } else {
                     // Произвольный литеральный разделитель: '<---nav--->', '<-- nav -->'.
-                    // Ядро = все буквы/цифры/подчёркивания маркера по порядку,
-                    // всё остальное (<, -, !, пробелы) — гибкое [<>\\s!-]*.
+                    // 1) Точное совпадение (регистронезависимо, гибкие пробелы).
+                    $flex = str_replace(' ', '\\s*', preg_quote($raw, '~'));
+                    $patterns[] = '~' . $flex . '~iu';
+                    // 2) Гибкие границы: ядро = буквы/цифры по порядку,
+                    //    всё остальное (<, -, !, пробелы) — [<>\s!-]*.
                     $core = preg_quote((string) preg_replace('~[^A-Za-z0-9_]~u', '', $raw), '~');
-                    // Пробелы внутри ядра тоже делаем гибкими ('end nav' ~ 'END  NAV')
                     $coreFlex = str_replace(' ', '\\s*', $core);
                     $loose = '[<>\\s!-]*' . $coreFlex . '[<>\\s!-]*';
                     $patterns[] = '~<' . $loose . '>~iu';
@@ -738,10 +782,29 @@ class HtmlImportParser
         } elseif (is_array($marker)) {
             foreach ($marker as $m) {
                 if (is_string($m)) {
-                    $patterns[] = $m;
+                    $patterns = array_merge($patterns, $this->markerPatterns($m));
                 }
             }
         }
+
+        return $patterns;
+    }
+
+    /**
+     * Ищет одно вхождение маркера. Возвращает смещение КОНЦА найденного
+     * маркера (int) или null.
+     *
+     * @param string[]|null $forbidden Токены (ядро маркера в
+     *        нижнем регистре), которые нельзя принимать за найденный маркер —
+     *        защита от совпадения end-паттерна с тем же самым start-маркером.
+     */
+    private function findMarkerOffset(string $html, mixed $marker, string $side, ?array $forbidden = null): ?int
+    {
+        if ($marker === null || $marker === '') {
+            return null;
+        }
+
+        $patterns = $this->markerPatterns($marker);
 
         // Собственные регулярки маркера → глобальные псевдонимы из конфига
         foreach ((array) ($this->rules['marker_aliases'][$side] ?? []) as $alias) {
@@ -751,12 +814,42 @@ class HtmlImportParser
         }
 
         foreach ($patterns as $p) {
-            if (@preg_match($p, $html, $m, PREG_OFFSET_CAPTURE) === 1) {
-                return (int) $m[0][1] + strlen($m[0][0]);
+            // Перебор всех вхождений: первое может оказаться самим start-маркером
+            // (или его вариацией из псевдонимов) — такие совпадения пропускаем.
+            $offset = 0;
+            while (@preg_match($p, $html, $m, PREG_OFFSET_CAPTURE, $offset) === 1) {
+                $matchEnd = (int) $m[0][1] + strlen($m[0][0]);
+                if ($forbidden !== null && $this->isForbiddenMatch(substr($html, 0, (int) $m[0][1]), $forbidden)) {
+                    // Совпадение относится к другому маркеру — пропускаем его ищем дальше.
+                    $offset = max((int) $m[0][1] + 1, $offset + 1);
+                    continue;
+                }
+
+                return $matchEnd;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Проверка: не «приняли» ли мы за маркер другой маркер (например, тот же
+     * самый start при поиске end). Между позициями поиска и совпадением не
+     * должно быть букв/цифр другого запрещённого ядра.
+     */
+    private function isForbiddenMatch(string $between, array $forbidden): bool
+    {
+        $letters = strtolower((string) preg_replace('~[^a-z0-9_]~', '', $between));
+        if ($letters === '') {
+            return false;
+        }
+        foreach ($forbidden as $token) {
+            if (str_contains($letters, $token)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
