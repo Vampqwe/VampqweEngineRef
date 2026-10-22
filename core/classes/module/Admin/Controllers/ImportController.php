@@ -294,14 +294,6 @@ class ImportController
             }
         }
 
-        // Инлайн-JS страницы выносится в storage/neutral-js.js (подключается
-        // автоматически через pages.scripts — путь добавляет парсер)
-        if (!empty($parsed['inline_scripts'])) {
-            if (!$this->parser->commitScripts((string) $parsed['inline_scripts'])) {
-                $this->adminService->setFlash('warning', 'Не удалось записать скрипты в storage/neutral-js.js');
-            }
-        }
-
         $this->session->remove(self::PREVIEW_KEY);
 
         $this->adminService->setFlash('success', 'Страница импортирована! ID: ' . $id);
