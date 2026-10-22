@@ -139,6 +139,12 @@ class CsrfToken
                 throw SecurityException::invalidCsrfToken();
             }
 
+            // Проверяем срок действия
+            if (time() - $stored['time'] > $this->expireSeconds) {
+                $this->clearCliToken();
+                throw SecurityException::invalidCsrfToken();
+            }
+
             if (!hash_equals($stored['token'], $token)) {
                 throw SecurityException::invalidCsrfToken();
             }

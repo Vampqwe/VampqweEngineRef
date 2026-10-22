@@ -41,7 +41,7 @@ final class CsrfMiddlewareTest extends TestCase
             $this->tmpRoot . '/config.env',
             "APP_ENV=test\nAPP_DEBUG=false\nAPP_NAME=test\nSECURITY_ENFORCE_CONFIG_PERMS=false\n"
         );
-        chmod($this->tmpRoot . '/config.env', 0644);
+        chmod($this->tmpRoot . '/config.env', 0640);
 
         Config::reset();
         Config::init($this->tmpRoot . '/config.env');
