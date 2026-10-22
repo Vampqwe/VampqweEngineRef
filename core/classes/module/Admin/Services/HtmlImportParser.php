@@ -115,34 +115,107 @@ class HtmlImportParser
         $doc = $this->loadHtml($html);
         $xpath = new DOMXPath($doc);
 
-        $title = $this->extractTitle($xpath);
-        $description = $this->extractDescription($xpath);
-        // 1. Извлекаем содержимое <style>-блоков (запись в neutral-style.css отложена до confirm)
-        $this->collectStyles($xpath);
-        $schemas = $this->extractSchema($xpath);
-        // 2. Удаляем теги <style> из документа — HTML-разметка и все классы остаются без изменений
-        $this->removeStyleTags($doc, $xpath);
-        // 3. Извлекаем контент: инлайн-стили (style="...") и классы сохраняются как есть
-        $content = $this->extractContent($html, $doc, $xpath);
-        // Страховка: служебная обёртка <!DOCTYPE html><html><head>...<body>, которую
-        // мы сами добавляем для корректной обработки кодировки в loadHTML(), никогда
-        // не должна попадать в итоговый контент страницы.
-        $content = $this->stripDocumentWrapper($content);
-        // 4. Скачиваем внешние картинки и заменяем ссылки на локальные пути
-        $content = $this->downloadAndReplaceImages($content);
-        // 5. Собираем пути JS-скриптов (по умолчанию /assets/js/main.js)
-        $scripts = $this->extractScripts($xpath);
+        // Валидация описаний блоков из конфига: битый блок не должен ронять импорт —
+        // он пропускается с предупреждением.
+        $blocks = (array) ($this->rules['blocks'] ?? []);
+        if ($blocks === []) {
+            $blocks = $this->defaultBlocks();
+        }
+        foreach ($blocks as $name => $block) {
+            if (!is_array($block)) {
+                unset($blocks[$name]);
+                continue;
+            }
+            $check = self::validateBlockDefinition((string) $name, $block);
+            if (!$check['ok']) {
+                $this->warnings[] = (string) $check['error'] . ' — блок пропущен';
+                unset($blocks[$name]);
+            }
+        }
 
-        $slug = $this->generateSlug($title);
-        if (empty($slug)) {
-            $slug = 'import-' . substr(md5($title . microtime()), 0, 8);
+        // Глобальные <style> всего документа уносятся в neutral-style.css до извлечения
+        // контентных блоков; HTML-разметка и все классы остаются без изменений.
+        $this->collectStyles($xpath);
+        $this->removeStyleTags($doc, $xpath);
+
+        $blockResults = [];   // имя блока => ['value'|'rows', 'found', ...]
+        $values = [];         // колонка => скалярное значение для pages
+        $rowSets = [];        // table => список строк для вставки (mode=rows)
+
+        foreach ($blocks as $name => $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+            $result = $this->extractBlock((string) $name, $block, $html, $doc, $xpath);
+            $blockResults[(string) $name] = $result;
+
+            if (($result['found'] ?? false) !== true && !empty($block['required'])) {
+                $this->warnings[] = "Обязательный блок «{$name}» не найден в документе";
+            }
+        }
+
+        // Сборка значений по target-описаниям из конфига блоков
+        foreach ($blocks as $name => $block) {
+            $result = $blockResults[$name] ?? null;
+            if ($result === null) {
+                continue;
+            }
+            $target = (array) ($block['target'] ?? []);
+            $mode = (string) ($target['mode'] ?? 'column');
+
+            if ($mode === 'rows') {
+                $table = (string) ($target['table'] ?? '');
+                if ($table !== '') {
+                    $rowSets[$table] = array_merge($rowSets[$table] ?? [], $result['rows'] ?? []);
+                }
+                continue;
+            }
+
+            $column = (string) ($target['column'] ?? '');
+            if ($column === '') {
+                continue; // блок только для предпросмотра (без записи)
+            }
+
+            $value = $result['value'] ?? null;
+            if ($mode === 'json_array') {
+                $list = is_array($value) ? array_values($value) : [];
+                if ($list === [] && isset($block['default'])) {
+                    $list = (array) $block['default'];
+                }
+                $values[$column] = json_encode($list, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            } else {
+                if ((!is_string($value) || $value === '') && isset($block['default'])) {
+                    $value = (string) $block['default'];
+                }
+                $values[$column] = $value;
+            }
+        }
+
+        // Специальные пост-источники: slug может генерироваться из title
+        if (isset($values['slug']) && (!is_string($values['slug']) || $values['slug'] === '')) {
+            unset($values['slug']);
+        }
+        if (!isset($values['slug'])) {
+            $slug = $this->generateSlug((string) ($values['title'] ?? ''));
+            if ($slug === '') {
+                $slug = 'import-' . substr(md5(((string) ($values['title'] ?? '')) . microtime()), 0, 8);
+            }
+            $values['slug'] = $slug;
+        }
+
+        // Совместимость со старшим контрактом ImportController/preview.html
+        $schemas = $rowSets['schema_org'] ?? [];
+        $scriptsRaw = $values['scripts'] ?? null;
+        $scripts = is_string($scriptsRaw) ? (array) json_decode($scriptsRaw, true) : [];
+        if ($scripts === []) {
+            $scripts = ['/assets/js/main.js'];
         }
 
         return [
-            'title' => $title,
-            'description' => $description,
-            'slug' => $slug,
-            'content' => $content,
+            'title' => (string) ($values['title'] ?? ''),
+            'description' => (string) ($values['description'] ?? ''),
+            'slug' => (string) ($values['slug'] ?? ''),
+            'content' => (string) ($values['content'] ?? ''),
             'schemas' => $schemas,
             'scripts' => $scripts,
             'styles' => $this->extractedStyles,
@@ -150,7 +223,419 @@ class HtmlImportParser
             'styles_extracted' => strlen($this->extractedStyles),
             'downloaded_images' => $this->downloadedImages,
             'warnings' => $this->warnings,
+            // Новые поля: полный отчёт по блокам и готовые к записи данные
+            'blocks' => $blockResults,
+            'values' => $values,
+            'row_sets' => $rowSets,
         ];
+    }
+
+    /**
+     * Публичный доступ к правилам импорта (config/import-parser.php) —
+     * для отчёта предпросмотра в админке.
+     */
+    public function getRules(): array
+    {
+        return $this->rules;
+    }
+
+    /**
+     * Активный профиль блоков: из конфига (валидный) либо встроенный по умолчанию.
+     *
+     * @return array<string,array>
+     */
+    public function getActiveBlocks(): array
+    {
+        $blocks = (array) ($this->rules['blocks'] ?? []);
+        if ($blocks === []) {
+            return $this->defaultBlocks();
+        }
+
+        $valid = [];
+        foreach ($blocks as $name => $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+            $check = self::validateBlockDefinition((string) $name, $block);
+            if ($check['ok']) {
+                $valid[$name] = $block;
+            }
+        }
+
+        return $valid;
+    }
+
+    /**
+     * Валидация и нормализация описания блока из конфига.
+     * Возвращает ['ok' => bool, 'error' => string|null, 'block' => array].
+     */
+    public static function validateBlockDefinition(string $name, array $block): array
+    {
+        $error = null;
+
+        if (preg_match('/[^a-z0-9_]/i', $name) === 1) {
+            $error = "Имя блока «{$name}»: допускаются только буквы, цифры и подчёркивание";
+        } else {
+            $type = (string) ($block['type'] ?? '');
+            $knownTypes = ['marker', 'xpath', 'meta', 'schema', 'script', 'title'];
+
+            if (!empty($block['source'])) {
+                if ($block['source'] !== 'slug_from_title') {
+                    $error = "Блок «{$name}»: неизвестный source «{$block['source']}»";
+                }
+            } elseif (!in_array($type, $knownTypes, true)) {
+                $error = "Блок «{$name}»: неизвестный type «{$type}» (допустимы: " . implode(', ', $knownTypes) . ')';
+            } elseif ($type === 'marker' && empty($block['start'])) {
+                $error = "Блок «{$name}»: для marker-блока обязателен 'start'";
+            } elseif ($type === 'xpath' && empty($block['expression'])) {
+                $error = "Блок «{$name}»: для xpath-блока обязательно 'expression'";
+            }
+
+            $target = $block['target'] ?? null;
+            if ($error === null && $target !== null) {
+                if (!is_array($target)) {
+                    $error = "Блок «{$name}»: target должен быть массивом";
+                } else {
+                    $mode = (string) ($target['mode'] ?? 'column');
+                    if (!in_array($mode, ['column', 'json_array', 'rows'], true)) {
+                        $error = "Блок «{$name}»: неизвестный target.mode «{$mode}»";
+                    } elseif (($mode === 'column' || $mode === 'json_array') && empty($target['column'])) {
+                        $error = "Блок «{$name}»: в target отсутствует 'column'";
+                    } elseif ($mode === 'rows' && (empty($target['table']) || empty($target['fields']))) {
+                        $error = "Блок «{$name}»: для rows-режима нужны target.table и target.fields";
+                    }
+                    foreach (['table', 'column'] as $k) {
+                        if (isset($target[$k]) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $target[$k]) !== 1) {
+                            $error = "Блок «{$name}»: некорректное имя {$k} в target: «{$target[$k]}»";
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return ['ok' => $error === null, 'error' => $error, 'block' => $block];
+    }
+
+    /**
+     * Профиль блоков по умолчанию — ровно прежнее жёстко зашитое поведение
+     * (для конфигов без секции 'blocks').
+     */
+    private function defaultBlocks(): array
+    {
+        return [
+            'title' => [
+                'type' => 'title',
+                'target' => ['table' => 'pages', 'column' => 'title'],
+                'required' => true,
+            ],
+            'description' => [
+                'type' => 'meta',
+                'expression' => 'description',
+                'fallback_meta' => ['property' => 'og:description'],
+                'target' => ['table' => 'pages', 'column' => 'description'],
+            ],
+            'main_content' => [
+                'type' => 'marker',
+                'start' => '<!-- ОСНОВНОЙ КОНТЕНТ -->',
+                'end' => '<!-- FOOTER -->',
+                'strip_wrapper' => true,
+                'verify_integrity' => true,
+                'download_images' => true,
+                'target' => ['table' => 'pages', 'column' => 'content'],
+            ],
+            'schema' => [
+                'type' => 'schema',
+                'target' => [
+                    'table' => 'schema_org',
+                    'mode' => 'rows',
+                    'fields' => ['schema_type' => '{schema_type}', 'data' => '{json}', 'priority' => 10],
+                ],
+            ],
+            'scripts' => [
+                'type' => 'script',
+                'target' => ['table' => 'pages', 'column' => 'scripts', 'mode' => 'json_array'],
+                'default' => ['/assets/js/main.js'],
+            ],
+        ];
+    }
+
+    /**
+     * Извлечение одного блока согласно его описанию из конфига.
+     *
+     * @return array{found:bool, value:mixed, rows:array, meta:array}
+     */
+    private function extractBlock(string $name, array $block, string $sourceHtml, DOMDocument $doc, DOMXPath $xpath): array
+    {
+        $type = (string) ($block['type'] ?? 'marker');
+        $result = ['found' => false, 'value' => null, 'rows' => [], 'meta' => []];
+
+        switch ($type) {
+            case 'title':
+                $value = $this->extractTitle($xpath);
+                $result['found'] = $value !== '';
+                $result['value'] = $value;
+                break;
+
+            case 'meta':
+                $value = $this->extractMetaByBlock($xpath, $block);
+                $result['found'] = $value !== '';
+                $result['value'] = $value;
+                break;
+
+            case 'xpath':
+                $expr = (string) ($block['expression'] ?? '');
+                $nodes = $expr !== '' ? @$xpath->query($expr) : false;
+                if ($nodes === false) {
+                    $this->warnings[] = "Блок «{$name}»: некорректное XPath-выражение: {$expr}";
+                    break;
+                }
+                $html = '';
+                foreach ($nodes as $node) {
+                    foreach ($node->childNodes as $child) {
+                        $html .= $doc->saveHTML($child);
+                    }
+                }
+                $result['found'] = trim($html) !== '';
+                $result['value'] = $html;
+                $result['meta']['nodes'] = $nodes->length;
+                break;
+
+            case 'marker':
+                [$startPos, $endPos] = $this->findMarkerPositionsForBlock($sourceHtml, $block, $name);
+                if ($startPos !== null) {
+                    $raw = $endPos === null
+                        ? substr($sourceHtml, $startPos)
+                        : substr($sourceHtml, $startPos, $endPos - $startPos);
+
+                    if ($endPos === null) {
+                        $this->warnings[] = "Блок «{$name}»: закрывающий маркер не найден, берём до конца документа";
+                        $footerPos = stripos($raw, '<footer');
+                        if ($footerPos !== false) {
+                            $raw = substr($raw, 0, $footerPos);
+                        }
+                    }
+
+                    // Отбрасываем закрывающие теги контейнеров, попавшие в начало среза
+                    $raw = preg_replace('~^\s*</(main|div|section|article|body|html)\s*>~iu', '', $raw, 1) ?? $raw;
+
+                    $result['value'] = $this->normalizeFragment($raw, $block, $name);
+                    $result['found'] = trim(strip_tags($result['value'])) !== '' || trim($result['value']) !== '';
+                    $result['meta']['marker'] = 'exact';
+                } elseif (!empty($block['fallback_xpath'])) {
+                    $frag = $this->extractByFallbackXpath($sourceHtml, (string) $block['fallback_xpath'], $block, $name);
+                    if ($frag !== null) {
+                        $result['value'] = $frag;
+                        $result['found'] = trim($frag) !== '';
+                        $result['meta']['marker'] = 'fallback_xpath';
+                    }
+                }
+                break;
+
+            case 'schema':
+                $result['rows'] = $this->extractSchema($xpath);
+                $result['found'] = $result['rows'] !== [];
+                $result['value'] = $result['rows'];
+                break;
+
+            case 'script':
+                $result['value'] = $this->extractScripts($xpath);
+                $result['found'] = $result['value'] !== [];
+                break;
+
+            default:
+                $this->warnings[] = "Блок «{$name}»: неизвестный тип «{$type}», блок пропущен";
+        }
+
+        // Транформация строкового значения
+        if (is_string($result['value'] ?? null) && !empty($block['transform'])) {
+            $result['value'] = $this->applyTransform($result['value'], (string) $block['transform']);
+        }
+
+        return $result;
+    }
+
+    private function applyTransform(string $value, string $transform): string
+    {
+        return match ($transform) {
+            'trim' => trim($value),
+            'lowercase' => mb_strtolower(trim($value), 'UTF-8'),
+            'strip_tags' => strip_tags($value),
+            'plain_text' => $this->plainText($value),
+            'slug' => $this->generateSlug($value),
+            default => $value,
+        };
+    }
+
+    /**
+     * Meta-значение по блоку: name или property + опциональный fallback_meta.
+     */
+    private function extractMetaByBlock(DOMXPath $xpath, array $block): string
+    {
+        $expr = (string) ($block['expression'] ?? '');
+        if ($expr !== '') {
+            $nodes = $xpath->query('//meta[@name="' . $expr . '"]/@content');
+            if ($nodes->length > 0) {
+                return trim($nodes->item(0)->textContent);
+            }
+            $nodes = $xpath->query('//meta[@property="' . $expr . '"]/@content');
+            if ($nodes->length > 0) {
+                return trim($nodes->item(0)->textContent);
+            }
+        }
+
+        foreach ((array) ($block['fallback_meta'] ?? []) as $fb) {
+            if (!is_array($fb)) {
+                continue;
+            }
+            if (isset($fb['name'])) {
+                $nodes = $xpath->query('//meta[@name="' . $fb['name'] . '"]/@content');
+                if ($nodes->length > 0) {
+                    return trim($nodes->item(0)->textContent);
+                }
+            }
+            if (isset($fb['property'])) {
+                $nodes = $xpath->query('//meta[@property="' . $fb['property'] . '"]/@content');
+                if ($nodes->length > 0) {
+                    return trim($nodes->item(0)->textContent);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Нормализация raw-фрагмента блока: отдельный DOM (починка «битого» HTML),
+     * опционально — сбор <style>, скачивание картинок, снятие служебной обёртки,
+     * контроль целостности текста.
+     */
+    private function normalizeFragment(string $raw, array $block, string $name): string
+    {
+        $fragDoc = new DOMDocument();
+        libxml_use_internal_errors(true);
+        $fragDoc->loadHTML(
+            '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head><body>'
+                . $raw . '</body></html>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+
+        $fragXp = new DOMXPath($fragDoc);
+
+        if (!empty($block['collect_styles'])) {
+            $this->collectStyles($fragXp);
+            $this->removeStyleTags($fragDoc, $fragXp);
+        }
+
+        $html = $this->extractInnerBody($fragDoc);
+
+        if (!empty($block['strip_wrapper'])) {
+            $html = $this->stripDocumentWrapper($html);
+        }
+
+        if (!empty($block['verify_integrity'])) {
+            $this->verifyContentIntegrity($html, $raw);
+        }
+
+        if (!empty($block['download_images'])) {
+            $html = $this->downloadAndReplaceImages($html);
+        }
+
+        return $html;
+    }
+
+    /**
+     * Fallback-извлечение блока по XPath (//main, //article и т.п.) из исходника.
+     */
+    private function extractByFallbackXpath(string $sourceHtml, string $expr, array $block, string $name): ?string
+    {
+        $doc = $this->loadHtml($sourceHtml);
+        $xp = new DOMXPath($doc);
+        $nodes = @$xp->query($expr);
+        if ($nodes === false || $nodes->length === 0) {
+            $this->warnings[] = "Блок «{$name}»: маркеры и fallback-узлы не найдены";
+            return null;
+        }
+
+        $this->collectStyles($xp);
+        $this->removeStyleTags($doc, $xp);
+
+        $html = '';
+        foreach ($nodes as $node) {
+            foreach ($node->childNodes as $child) {
+                $html .= $doc->saveHTML($child);
+            }
+        }
+
+        return $this->normalizeFragment($html, $block, $name);
+    }
+
+    /**
+     * Позиции маркеров конкретного блока в исходном HTML.
+     * 'start'/'end' — либо точное содержимое комментария ('<!-- nav -->',
+     * сравнивается регистронезависимо и с гибкими пробелами), либо PCRE
+     * ('~...~' или '/.../'). При неудаче подключаются глобальные 'marker_aliases'.
+     *
+     * @return array{0:int|null, 1:int|null}
+     */
+    private function findMarkerPositionsForBlock(string $html, array $block, string $name): array
+    {
+        $start = $this->findMarkerOffset($html, $block['start'] ?? null, 'start');
+        if ($start === null) {
+            return [null, null];
+        }
+
+        $tailOffset = $start['offset'];
+        $end = $this->findMarkerOffset(substr($html, $tailOffset), $block['end'] ?? null, 'end');
+
+        return [$start['offset'], $end === null ? null : $tailOffset + $end['offset']];
+    }
+
+    /**
+     * Ищет одно вхождение маркера. Возвращает ['offset' => int, 'len' => int]
+     * (offset — позиция КОНЦА найденного маркера) или null.
+     */
+    private function findMarkerOffset(string $html, mixed $marker, string $side): ?int
+    {
+        if ($marker === null || $marker === '') {
+            return null;
+        }
+
+        $patterns = [];
+        if (is_string($marker)) {
+            if (preg_match('~^([/~]).*\1[imsxuADSUJ]*$~s', $marker)) {
+                // Готовая PCRE из конфига
+                $patterns[] = $marker;
+            } else {
+                // Литеральный комментарий-маркер: <!-- ... --> (регистронезависимо, гибкие пробелы)
+                $inner = trim($marker);
+                $inner = preg_replace('~^<!--\s*|\s*-->$~', '', $inner);
+                $quoted = preg_quote((string) $inner, '~');
+                $patterns[] = '~<!--[<\s-]*\s*' . $quoted . '\s*[>\s-]*-->~iu';
+            }
+        } elseif (is_array($marker)) {
+            foreach ($marker as $m) {
+                if (is_string($m)) {
+                    $patterns[] = $m;
+                }
+            }
+        }
+
+        // Собственные регулярки маркера → глобальные псевдонимы из конфига
+        foreach ((array) ($this->rules['marker_aliases'][$side] ?? []) as $alias) {
+            if (is_string($alias)) {
+                $patterns[] = $alias;
+            }
+        }
+
+        foreach ($patterns as $p) {
+            if (@preg_match($p, $html, $m, PREG_OFFSET_CAPTURE) === 1) {
+                return ['offset' => (int) $m[0][1] + strlen($m[0][0]), 'len' => strlen($m[0][0])];
+            }
+        }
+
+        return null;
     }
 
     private function loadHtml(string $html): DOMDocument
