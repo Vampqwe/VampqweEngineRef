@@ -1,7 +1,0 @@
-[2026-10-22 16:14:32.000000] ℹ️  [INFO     ] AUDIT: install_access_denied [install_wizard]
-  [user_id] => anonymous
-  [ip] => 127.0.0.1
-  [user_agent] => curl/7.88.1
-  [uri] => /admin/install
-  [method] => GET
-  [path] => /admin/install
