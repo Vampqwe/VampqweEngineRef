@@ -14,3 +14,5 @@ note
 # Зависимости (не коммитим — ставим через composer install в CI)
 /vendor/
 composer.phar
+.phpunit.cache/
+.phpunit.result.cache
