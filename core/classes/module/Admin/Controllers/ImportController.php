@@ -66,8 +66,9 @@ class ImportController
     /**
      * Обработка импортированного контента перед сохранением.
      * Режим берётся из config/page-content.php ('content_mode'), как и в
-     * PagesController: 'sanitize' — очистка с СОХРАНЕНИЕМ <style>/<script>
-     * внутри контента (cleanPreserveAssets), 'raw' — без изменений.
+     * PagesController: 'sanitize' — очистка с СОХРАНЕНИЕМ <style>/<script>/
+     * <svg> побайтно (cleanAsIs: вырезаются только on*-атрибуты, опасные
+     * URL-схемы и CSS-векторы), 'raw' — без изменений.
      */
     private function sanitizeImportedContent(string $html): string
     {
@@ -79,7 +80,7 @@ class ImportController
             $html = mb_substr($html, 0, $maxLen);
         }
 
-        return $mode === 'raw' ? $html : HtmlSanitizer::cleanPreserveAssets($html);
+        return $mode === 'raw' ? $html : HtmlSanitizer::cleanAsIs($html);
     }
 
     public function index(Request $request): Response
