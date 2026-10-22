@@ -1,0 +1,22 @@
+{
+    "name": "project/core",
+    "description": "Модульное ядро приложения с DI, файловой системой, БД, логгером, валидатором",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "ext-dom": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Core\\System\\": "core/classes/system/",
+            "Core\\Module\\": "core/classes/module/"
+        },
+        "files": [
+            "core/helpers.php"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
