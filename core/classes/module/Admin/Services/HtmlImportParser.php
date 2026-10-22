@@ -33,10 +33,7 @@ class HtmlImportParser
     private array $rules;
     private string $basePath;
     private string $uploadDir;
-    /** Промежуточный файл стилей: storage/neutral-style.css */
-    private string $stylesFile;
     private array $downloadedImages = [];
-    private string $extractedStyles = '';
     private array $warnings = [];
     /** Кэш картинок original => local (в т.ч. неудачные попытки => null) */
     private array $imageCache = [];
@@ -66,9 +63,6 @@ class HtmlImportParser
         $this->basePath = $realBasePath;
         $this->uploadDir = $this->basePath . DIRECTORY_SEPARATOR
             . trim((string) ($this->rules['upload_dir'] ?? 'uploads/import'), '/');
-        // Стили импортируемых страниц складываются в промежуточный файл стилей
-        $this->stylesFile = $this->basePath . DIRECTORY_SEPARATOR
-            . trim((string) ($this->rules['styles_file'] ?? 'neutral-style.css'), '/');
 
         // Создаём директории
         if (!is_dir($this->uploadDir)) {
@@ -106,7 +100,6 @@ class HtmlImportParser
     public function parse(string $html): array
     {
         $this->downloadedImages = [];
-        $this->extractedStyles = '';
         $this->warnings = [];
         $this->imageCache = [];
 
@@ -131,10 +124,10 @@ class HtmlImportParser
             }
         }
 
-        // Глобальные <style> всего документа уносятся в neutral-style.css до извлечения
-        // контентных блоков; HTML-разметка и все классы остаются без изменений.
-        $this->collectStyles($xpath);
-        $this->removeStyleTags($doc, $xpath);
+        // NB: <style> и инлайн-<script> БОЛЬШЕ НЕ выносятся в промежуточные
+        // neutral-файлы. Контент между маркерами сериализуется как есть
+        // (стили и JS остаются внутри HTML страницы), а при отдаче их
+        // сохраняет HtmlSanitizer::cleanPreserveAssets().
 
         $blockResults = [];   // имя блока => ['value'|'rows', 'found', ...]
         $values = [];         // колонка => скалярное значение для pages
@@ -216,9 +209,7 @@ class HtmlImportParser
             'content' => (string) ($values['content'] ?? ''),
             'schemas' => $schemas,
             'scripts' => $scripts,
-            'styles' => $this->extractedStyles,
             'images_count' => count($this->downloadedImages),
-            'styles_extracted' => strlen($this->extractedStyles),
             'downloaded_images' => $this->downloadedImages,
             'warnings' => $this->warnings,
             // Новые поля: полный отчёт по блокам и готовые к записи данные
@@ -623,10 +614,7 @@ class HtmlImportParser
 
         $fragXp = new DOMXPath($fragDoc);
 
-        if (!empty($block['collect_styles'])) {
-            $this->collectStyles($fragXp);
-            $this->removeStyleTags($fragDoc, $fragXp);
-        }
+        // Стили и скрипты внутри блока НЕ вырезаются — фрагмент сохраняется как есть.
 
         $html = $this->extractInnerBody($fragDoc);
 
@@ -658,8 +646,7 @@ class HtmlImportParser
             return null;
         }
 
-        $this->collectStyles($xp);
-        $this->removeStyleTags($doc, $xp);
+        // Стили НЕ вырезаются: fallback-контент сохраняется как есть.
 
         $html = '';
         foreach ($nodes as $node) {
@@ -901,95 +888,6 @@ class HtmlImportParser
         return '';
     }
 
-    /**
-     * Собирает CSS из тегов <style> в памяти (без записи на диск).
-     */
-    private function collectStyles(DOMXPath $xpath): void
-    {
-        $nodes = $xpath->query('//style');
-        if ($nodes->length === 0) {
-            return;
-        }
-
-        foreach ($nodes as $node) {
-            $css = trim($node->textContent);
-            if (!empty($css)) {
-                $this->extractedStyles .= $css . "\n";
-            }
-        }
-    }
-
-    /**
-     * Удаляет теги <style> из DOM. Классы и остальной HTML не трогаются.
-     */
-    private function removeStyleTags(DOMDocument $doc, DOMXPath $xpath): void
-    {
-        $nodes = $xpath->query('//style');
-        $list = [];
-        foreach ($nodes as $node) {
-            $list[] = $node;
-        }
-        foreach ($list as $node) {
-            $node->parentNode?->removeChild($node);
-        }
-    }
-
-    /**
-     * Запись извлечённых стилей в промежуточный neutral-style.css с дедупликацией.
-     * Повторяющиеся правила (одинаковый селектор) заменяются новыми значениями.
-     * Вызывается только на этапе confirm (чтобы предпросмотр не имел побочных эффектов).
-     */
-    public function commitStyles(string $css): bool
-    {
-        $css = trim($css);
-        if ($css === '') {
-            return true;
-        }
-
-        $existingRules = [];
-        if (is_file($this->stylesFile)) {
-            $existingCss = (string)file_get_contents($this->stylesFile);
-            $existingRules = $this->parseCssRules($existingCss);
-        }
-
-        $newRules = $this->parseCssRules($css);
-
-        // Дедупликация: одинаковые селекторы заменяем (последнее значение побеждает),
-        // новые селекторы дописываем в конец
-        $merged = $existingRules;
-        foreach ($newRules as $selector => $body) {
-            $merged[$selector] = $body;
-        }
-
-        $out = "/* neutral-style.css — стили, извлечённые импортом страниц (" . date('Y-m-d H:i:s') . ") */\n\n";
-        foreach ($merged as $selector => $body) {
-            $out .= $selector . " {" . $body . "}\n";
-        }
-
-        return file_put_contents($this->stylesFile, $out, LOCK_EX) !== false;
-    }
-
-    /**
-     * Разбивает CSS на карту «селектор => тело правила» (поверхностный парсер без учёта @media).
-     */
-    private function parseCssRules(string $css): array
-    {
-        $rules = [];
-        // Убираем комментарии
-        $css = preg_replace('#/\*.*?\*/#s', '', $css) ?? '';
-
-        if (preg_match_all('/([^{}]+)\{([^{}]*)\}/s', $css, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $m) {
-                $selector = preg_replace('/\s+/', ' ', trim($m[1]));
-                $body = trim($m[2]);
-                if ($selector !== '' && $body !== '') {
-                    $rules[$selector] = $body;
-                }
-            }
-        }
-
-        return $rules;
-    }
 
     /**
      * Извлекает пути JS-скриптов страницы. Всегда содержит дефолтный /assets/js/main.js.

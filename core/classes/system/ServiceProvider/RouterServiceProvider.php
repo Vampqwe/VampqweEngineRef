@@ -133,9 +133,9 @@ class RouterServiceProvider extends ServiceProvider
                 ->setHeader('X-Engine-State', $state->value);
         })->name('api.health.ready');
 
-        // ─── Хранилище импорта (нейтральный CSS и скачанные картинки) ───
+        // ─── Хранилище импорта (скачанные картинки) ───
         // .htaccess закрывает /storage от веб-сервера, поэтому файлы отдаёт движок.
-        // URL в контенте страниц: /storage/neutral-style.css, /storage/uploads/import/*.jpg|png|...
+        // URL в контенте страниц: /storage/uploads/import/*.jpg|png|...
         $router->get('/storage/{file}', function (Request $request) use ($container): Response {
             /** @var \Core\System\Config\Config $config */
             $config = $container->get(\Core\System\Config\Config::class);
@@ -148,8 +148,8 @@ class RouterServiceProvider extends ServiceProvider
             }
 
             $rel = (string) $request->getAttribute('file', '');
-            // Белый список: только neutral-style.css и картинки из uploads/import
-            if ($rel !== 'neutral-style.css' && !preg_match('#^uploads/import/[A-Za-z0-9._-]+$#', $rel)) {
+            // Белый список: только картинки из uploads/import
+            if (!preg_match('#^uploads/import/[A-Za-z0-9._-]+$#', $rel)) {
                 return Response::text('Not Found', StatusCode::NOT_FOUND);
             }
 
