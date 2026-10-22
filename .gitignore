@@ -1,3 +1,4 @@
+# Секреты и локальный конфиг
 config.env
 storage/.install_key
 storage/.install_seed
@@ -9,3 +10,7 @@ storage/cache/*
 storage/.rate_limits/
 storage/.installed
 note
+
+# Зависимости (не коммитим — ставим через composer install в CI)
+/vendor/
+composer.phar
