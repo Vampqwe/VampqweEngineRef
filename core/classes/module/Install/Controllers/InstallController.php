@@ -189,25 +189,25 @@ class InstallController
 
             // 2. Финализация config.env: APP_BASE_URL + SUPER_ADMIN_* (пароль — только хэш).
             $configResult = $this->installService->writeConfigValues([
-				'APP_BASE_URL'         => rtrim($baseUrl, '/'),
-				'SUPER_ADMIN_EMAIL'    => strtolower($adminMail),
-				'SUPER_ADMIN_NAME'     => $adminName !== '' ? $adminName : 'Администратор',
-				'SUPER_ADMIN_PASSWORD' => password_hash($adminPass, PASSWORD_BCRYPT, ['cost' => 12]),
-			]);
+                'APP_BASE_URL'         => rtrim($baseUrl, '/'),
+                'SUPER_ADMIN_EMAIL'    => strtolower($adminMail),
+                'SUPER_ADMIN_NAME'     => $adminName !== '' ? $adminName : 'Администратор',
+                'SUPER_ADMIN_PASSWORD' => password_hash($adminPass, PASSWORD_BCRYPT, ['cost' => 12]),
+            ]);
 
-			if (!$configResult['success']) {
-				$this->adminService->setFlash('error', $configResult['message']);
-				return $this->render('admin/install/step4-config', 'Установка — Шаг 4');
-			}
-			
-			// Обновить seed-данные актуальным APP_NAME
-			try {
-				$pdo = $this->installService->getPdoForInstall($dbConfig);
-				$this->installService->updateSeedDataWithAppName($pdo, $adminName !== '' ? $adminName : 'VampqweEngine');
-			} catch (\Throwable $e) {
-				// Не критично — логируем и продолжаем
-				error_log('updateSeedDataWithAppName failed: ' . $e->getMessage());
-			}
+            if (!$configResult['success']) {
+                $this->adminService->setFlash('error', $configResult['message']);
+                return $this->render('admin/install/step4-config', 'Установка — Шаг 4');
+            }
+
+            // Обновить seed-данные актуальным APP_NAME
+            try {
+                $pdo = $this->installService->getPdoForInstall($dbConfig);
+                $this->installService->updateSeedDataWithAppName($pdo, $adminName !== '' ? $adminName : 'VampqweEngine');
+            } catch (\Throwable $e) {
+                // Не критично — логируем и продолжаем
+                error_log('updateSeedDataWithAppName failed: ' . $e->getMessage());
+            }
 
             $dbConfig['base_url'] = rtrim($baseUrl, '/');
             $this->sessions->set('install_db_enc', $this->installService->encryptDbConfig($dbConfig));
@@ -221,36 +221,36 @@ class InstallController
             'admin_name'  => (string)$this->config->get('SUPER_ADMIN_NAME', ''),
         ]);
     }
-	
-			/**
-		 * Обновить seed-данные актуальным APP_NAME после шага 4.
-		 * Вызывается после записи APP_NAME в config.env.
-		 */
-		public function updateSeedDataWithAppName(PDO $pdo, string $appName): void
-		{
-			try {
-				// Обновить schema_org для Organization
-				$pdo->prepare("UPDATE schema_org SET data = ? WHERE schema_type = 'Organization' AND route = '*'")->execute([
-					json_encode(['name' => $appName, 'url' => $this->config->get('APP_BASE_URL', 'https://localhost')], JSON_UNESCAPED_UNICODE)
-				]);
 
-				// Обновить главную страницу
-				$pdo->prepare("UPDATE pages SET title = ?, og_title = ?, content = ? WHERE slug = ''")->execute([
-					$appName,
-					$appName,
-					'<h1>Главная</h1><p>Добро пожаловать на сайт "' . htmlspecialchars($appName, ENT_QUOTES, 'UTF-8') . '".</p>'
-				]);
+            /**
+         * Обновить seed-данные актуальным APP_NAME после шага 4.
+         * Вызывается после записи APP_NAME в config.env.
+         */
+        public function updateSeedDataWithAppName(PDO $pdo, string $appName): void
+        {
+            try {
+                // Обновить schema_org для Organization
+                $pdo->prepare("UPDATE schema_org SET data = ? WHERE schema_type = 'Organization' AND route = '*'")->execute([
+                    json_encode(['name' => $appName, 'url' => $this->config->get('APP_BASE_URL', 'https://localhost')], JSON_UNESCAPED_UNICODE)
+                ]);
 
-				// Обновить автора по умолчанию (если есть)
-				$defaultAuthorName = $this->config->get('DEFAULT_AUTHOR_NAME', $appName);
-				$pdo->prepare("UPDATE authors SET name = ? WHERE slug = 'komanda-103vet' OR slug = ? LIMIT 1")->execute([
-					$defaultAuthorName,
-					$this->generateSlug($defaultAuthorName)
-				]);
-			} catch (\Throwable $e) {
-				error_log('updateSeedDataWithAppName failed: ' . $e->getMessage());
-			}
-		}
+                // Обновить главную страницу
+                $pdo->prepare("UPDATE pages SET title = ?, og_title = ?, content = ? WHERE slug = ''")->execute([
+                    $appName,
+                    $appName,
+                    '<h1>Главная</h1><p>Добро пожаловать на сайт "' . htmlspecialchars($appName, ENT_QUOTES, 'UTF-8') . '".</p>'
+                ]);
+
+                // Обновить автора по умолчанию (если есть)
+                $defaultAuthorName = $this->config->get('DEFAULT_AUTHOR_NAME', $appName);
+                $pdo->prepare("UPDATE authors SET name = ? WHERE slug = 'komanda-103vet' OR slug = ? LIMIT 1")->execute([
+                    $defaultAuthorName,
+                    $this->generateSlug($defaultAuthorName)
+                ]);
+            } catch (\Throwable $e) {
+                error_log('updateSeedDataWithAppName failed: ' . $e->getMessage());
+            }
+        }
 
     public function step5(Request $request): Response
     {
@@ -316,7 +316,7 @@ class InstallController
     private function render(string $view, string $title, array $extra = []): Response
     {
         $flash = $this->adminService->getFlash();
-        
+
         $html = $this->template->render($view, array_merge([
             'title' => $title,
             'flash' => $flash,

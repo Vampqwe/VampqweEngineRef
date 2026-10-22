@@ -20,27 +20,27 @@ class SettingsController
         private SettingsService $settingsService,
         private AdminService $adminService,
         private Template $template,
-		private SecurityManager $security,
+        private SecurityManager $security,
     ) {}
 
     /**
      * GET /admin/settings — показать форму настроек
      */
-	public function index(Request $request): Response
-	{
-		$sections = $this->settingsService->getSettingsGrouped();
-		$flash = $this->adminService->getFlash();
+    public function index(Request $request): Response
+    {
+        $sections = $this->settingsService->getSettingsGrouped();
+        $flash = $this->adminService->getFlash();
 
-		$html = $this->template->render('admin/settings/index', [
-			'title' => 'Настройки сайта',
-			'sections' => $sections,
-			'flash' => $flash,
-			'csrf_token' => $this->security->getCsrfToken()->getToken(),
-			'csrf_meta' => $this->security->getCsrfToken()->getMetaTag(),
-		]);
+        $html = $this->template->render('admin/settings/index', [
+            'title' => 'Настройки сайта',
+            'sections' => $sections,
+            'flash' => $flash,
+            'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_meta' => $this->security->getCsrfToken()->getMetaTag(),
+        ]);
 
-		return Response::html($html);
-	}
+        return Response::html($html);
+    }
 
     /**
      * POST /admin/settings — сохранить настройки
@@ -63,30 +63,30 @@ class SettingsController
 
         return Response::redirect('/admin/settings');
     }
-	
-		/**
-	 * POST /admin/settings/rebuild-seed — пересоздать seed-данные
-	 */
-	public function rebuildSeed(Request $request): Response
-	{
-		$result = $this->settingsService->rebuildSeedData();
 
-		if (!$result['ok']) {
-			$this->adminService->setFlash('error', implode(' ', $result['errors']));
-		} else {
-			$msg = "Seed-данные обновлены. ";
-			$parts = [];
-			if ($result['updated']['schemas'] > 0) $parts[] = "схем: {$result['updated']['schemas']}";
-			if ($result['updated']['pages'] > 0) $parts[] = "страниц: {$result['updated']['pages']}";
-			if ($result['updated']['authors'] > 0) $parts[] = "авторов: {$result['updated']['authors']}";
-			if (!empty($parts)) {
-				$msg .= "Изменено: " . implode(', ', $parts) . ".";
-			} else {
-				$msg .= "Изменений не обнаружено (все данные уже актуальны).";
-			}
-			$this->adminService->setFlash('success', $msg);
-		}
+        /**
+     * POST /admin/settings/rebuild-seed — пересоздать seed-данные
+     */
+    public function rebuildSeed(Request $request): Response
+    {
+        $result = $this->settingsService->rebuildSeedData();
 
-		return Response::redirect('/admin/settings');
-	}
+        if (!$result['ok']) {
+            $this->adminService->setFlash('error', implode(' ', $result['errors']));
+        } else {
+            $msg = "Seed-данные обновлены. ";
+            $parts = [];
+            if ($result['updated']['schemas'] > 0) $parts[] = "схем: {$result['updated']['schemas']}";
+            if ($result['updated']['pages'] > 0) $parts[] = "страниц: {$result['updated']['pages']}";
+            if ($result['updated']['authors'] > 0) $parts[] = "авторов: {$result['updated']['authors']}";
+            if (!empty($parts)) {
+                $msg .= "Изменено: " . implode(', ', $parts) . ".";
+            } else {
+                $msg .= "Изменений не обнаружено (все данные уже актуальны).";
+            }
+            $this->adminService->setFlash('success', $msg);
+        }
+
+        return Response::redirect('/admin/settings');
+    }
 }

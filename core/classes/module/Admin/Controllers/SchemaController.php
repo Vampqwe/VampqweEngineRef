@@ -24,7 +24,7 @@ class SchemaController
     {
         $page = max(1, (int) $request->input('page', 1));
         $data = $this->schemaService->getAllSchemas($page, 20);
-        
+
         return Response::html($this->template->render('admin/schema/index', [
             'title' => 'Управление Schema.org',
             'schemas' => $data['schemas'],
@@ -65,7 +65,7 @@ class SchemaController
     {
         $id = (int) $request->getAttribute('id');
         $schema = $this->schemaService->getSchema($id);
-        
+
         if (!$schema) {
             $this->adminService->setFlash('error', 'Схема не найдена');
             return Response::redirect('/admin/schema');
@@ -85,7 +85,7 @@ class SchemaController
     {
         $id = (int) $request->getAttribute('id');
         $result = $this->schemaService->saveSchema($id, $request->allPost());
-        
+
         if (!$result['ok']) {
             $this->adminService->setFlash('error', implode(' ', $result['errors']));
             return Response::redirect('/admin/schema/' . $id . '/edit');
@@ -98,7 +98,7 @@ class SchemaController
     {
         $id = (int) $request->getAttribute('id');
         $result = $this->schemaService->deleteSchema($id);
-        
+
         if (!$result['ok']) {
             $this->adminService->setFlash('error', implode(' ', $result['errors']));
         } else {

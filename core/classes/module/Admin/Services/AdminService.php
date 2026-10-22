@@ -95,7 +95,7 @@ class AdminService
             'total_views' => (int) $this->db->fetchColumn("SELECT COALESCE(SUM(views_count), 0) FROM pages"),
         ];
     }
-	
+
     /**
      * Получить последние страницы.
      *

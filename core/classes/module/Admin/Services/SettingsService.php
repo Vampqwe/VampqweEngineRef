@@ -20,7 +20,7 @@ class SettingsService
 {
     private Config $config;
     private SecurityManager $security;
-	private DataBase $db;
+    private DataBase $db;
     private string $basePath;
 
     /**
@@ -201,7 +201,7 @@ class SettingsService
     {
         $this->config = $config;
         $this->security = $security;
-		$this->db = $db;
+        $this->db = $db;
         $this->basePath = $config->getRootPath();
     }
 
@@ -287,12 +287,12 @@ class SettingsService
         if (!$result['success']) {
             return ['ok' => false, 'errors' => [$result['message']], 'changed' => 0];
         }
-		// Если изменился APP_NAME — обновить брендовые данные в БД
-		if (isset($changes['APP_NAME'])) {
-			$rebuild = $this->rebuildBrandData($changes['APP_NAME']);
-			// Можно добавить в ответ информацию о пересчёте
-			$changes['_rebuild_info'] = $rebuild;
-		}
+        // Если изменился APP_NAME — обновить брендовые данные в БД
+        if (isset($changes['APP_NAME'])) {
+            $rebuild = $this->rebuildBrandData($changes['APP_NAME']);
+            // Можно добавить в ответ информацию о пересчёте
+            $changes['_rebuild_info'] = $rebuild;
+        }
         // Аудит-лог
         $this->auditChanges($changes);
 
@@ -357,50 +357,50 @@ class SettingsService
      * @param array<string, string> $values
      */
     private function writeConfigValues(array $values): array
-	{
-		try {
-			$configFile = $this->basePath . '/config.env';
-			
-			// Отладка: логируем путь и права
-			error_log('SettingsService: config file = ' . $configFile);
-			error_log('SettingsService: file exists = ' . (is_file($configFile) ? 'yes' : 'no'));
-			error_log('SettingsService: file writable = ' . (is_writable($configFile) ? 'yes' : 'no'));
-			
-			if (!is_file($configFile)) {
-				return ['success' => false, 'message' => 'Файл config.env не найден.'];
-			}
-			if (!is_writable($configFile)) {
-				return ['success' => false, 'message' => 'Нет прав на запись в config.env.'];
-			}
+    {
+        try {
+            $configFile = $this->basePath . '/config.env';
 
-			$content = file_get_contents($configFile);
-			if ($content === false) {
-				return ['success' => false, 'message' => 'Не удалось прочитать config.env.'];
-			}
+            // Отладка: логируем путь и права
+            error_log('SettingsService: config file = ' . $configFile);
+            error_log('SettingsService: file exists = ' . (is_file($configFile) ? 'yes' : 'no'));
+            error_log('SettingsService: file writable = ' . (is_writable($configFile) ? 'yes' : 'no'));
 
-			foreach ($values as $key => $value) {
-				$pattern = '/^' . preg_quote($key, '/') . '=.*$/m';
-				$replacement = fn() => $key . '=' . $value;
+            if (!is_file($configFile)) {
+                return ['success' => false, 'message' => 'Файл config.env не найден.'];
+            }
+            if (!is_writable($configFile)) {
+                return ['success' => false, 'message' => 'Нет прав на запись в config.env.'];
+            }
 
-				if (preg_match($pattern, $content)) {
-					$content = preg_replace_callback($pattern, $replacement, $content);
-					error_log('SettingsService: replaced key ' . $key);
-				} else {
-					$content .= "\n" . $key . '=' . $value;
-					error_log('SettingsService: appended key ' . $key);
-				}
-			}
+            $content = file_get_contents($configFile);
+            if ($content === false) {
+                return ['success' => false, 'message' => 'Не удалось прочитать config.env.'];
+            }
 
-			if (file_put_contents($configFile, $content) === false) {
-				return ['success' => false, 'message' => 'Не удалось записать config.env.'];
-			}
+            foreach ($values as $key => $value) {
+                $pattern = '/^' . preg_quote($key, '/') . '=.*$/m';
+                $replacement = fn() => $key . '=' . $value;
 
-			error_log('SettingsService: config saved successfully');
-			return ['success' => true, 'message' => 'Настройки сохранены.'];
-		} catch (\Throwable $e) {
-			return ['success' => false, 'message' => 'Ошибка: ' . $e->getMessage()];
-		}
-	}
+                if (preg_match($pattern, $content)) {
+                    $content = preg_replace_callback($pattern, $replacement, $content);
+                    error_log('SettingsService: replaced key ' . $key);
+                } else {
+                    $content .= "\n" . $key . '=' . $value;
+                    error_log('SettingsService: appended key ' . $key);
+                }
+            }
+
+            if (file_put_contents($configFile, $content) === false) {
+                return ['success' => false, 'message' => 'Не удалось записать config.env.'];
+            }
+
+            error_log('SettingsService: config saved successfully');
+            return ['success' => true, 'message' => 'Настройки сохранены.'];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Ошибка: ' . $e->getMessage()];
+        }
+    }
 
     /**
      * Создать бэкап config.env перед записью.
@@ -441,10 +441,10 @@ class SettingsService
             error_log('Settings audit failed: ' . $e->getMessage());
         }
     }
-	
-	/**
+
+    /**
  * Обновить брендовые данные в БД при смене APP_NAME.
- * 
+ *
  * Вызывается автоматически после сохранения APP_NAME через настройки.
  * Обновляет:
  *  - schema_org.data для брендовых типов (Organization, WebSite, LocalBusiness, VeterinaryCare, MedicalOrganization)
@@ -467,7 +467,7 @@ public function rebuildBrandData(string $newAppName): array
     try {
         // 1. Обновить schema_org
         $schemas = $this->db->fetchAll(
-            "SELECT id, data FROM schema_org WHERE schema_type IN (" . 
+            "SELECT id, data FROM schema_org WHERE schema_type IN (" .
             implode(',', array_fill(0, count($brandTypes), '?')) . ")",
             $brandTypes
         );
@@ -523,13 +523,13 @@ public function rebuildBrandData(string $newAppName): array
         }
 
         return ['updated_schemas' => $updatedSchemas, 'updated_pages' => $updatedPages];
-		} catch (\Throwable $e) {
-			error_log('rebuildBrandData failed: ' . $e->getMessage());
-			return ['updated_schemas' => 0, 'updated_pages' => 0];
-		}
-	}
-	
-	/**
+        } catch (\Throwable $e) {
+            error_log('rebuildBrandData failed: ' . $e->getMessage());
+            return ['updated_schemas' => 0, 'updated_pages' => 0];
+        }
+    }
+
+    /**
  * Пересоздать seed-данные с актуальным APP_NAME.
  *
  * Обновляет:
@@ -543,7 +543,7 @@ public function rebuildSeedData(): array
 {
     $appName = $this->config->get('APP_NAME', 'VampqweEngine');
     $baseUrl = rtrim($this->config->get('APP_BASE_URL', 'https://localhost'), '/');
-    
+
     $updated = ['schemas' => 0, 'pages' => 0, 'authors' => 0];
     $errors = [];
 
@@ -551,7 +551,7 @@ public function rebuildSeedData(): array
         // 1. Обновить брендовые схемы
         $brandTypes = ['Organization', 'WebSite', 'LocalBusiness', 'VeterinaryCare', 'MedicalOrganization'];
         $schemas = $this->db->fetchAll(
-            "SELECT id, data FROM schema_org WHERE schema_type IN (" . 
+            "SELECT id, data FROM schema_org WHERE schema_type IN (" .
             implode(',', array_fill(0, count($brandTypes), '?')) . ")",
             $brandTypes
         );
@@ -607,26 +607,26 @@ public function rebuildSeedData(): array
 
         // 3. Обновить автора по умолчанию (если есть)
         $defaultAuthor = $this->db->fetchOne("SELECT id, name FROM authors WHERE slug = 'komanda-103vet' LIMIT 1");
-			if ($defaultAuthor) {
-				$newAuthorName = 'Команда сайта ' . $appName;
-				if ($defaultAuthor['name'] !== $newAuthorName) {
-					$this->db->execute(
-						"UPDATE authors SET name = :name, updated_at = NOW() WHERE id = :id",
-						['name' => $newAuthorName, 'id' => $defaultAuthor['id']]
-					);
-					$updated['authors']++;
-				}
-			}
+            if ($defaultAuthor) {
+                $newAuthorName = 'Команда сайта ' . $appName;
+                if ($defaultAuthor['name'] !== $newAuthorName) {
+                    $this->db->execute(
+                        "UPDATE authors SET name = :name, updated_at = NOW() WHERE id = :id",
+                        ['name' => $newAuthorName, 'id' => $defaultAuthor['id']]
+                    );
+                    $updated['authors']++;
+                }
+            }
 
-			// Аудит-лог
-			$this->security->getAuditLogger()->logAction('settings.rebuild_seed', 'config', null, [
-				'app_name' => $appName,
-				'updated' => $updated,
-			]);
+            // Аудит-лог
+            $this->security->getAuditLogger()->logAction('settings.rebuild_seed', 'config', null, [
+                'app_name' => $appName,
+                'updated' => $updated,
+            ]);
 
-			return ['ok' => true, 'errors' => [], 'updated' => $updated];
-		} catch (\Throwable $e) {
-			return ['ok' => false, 'errors' => ['Ошибка пересоздания: ' . $e->getMessage()], 'updated' => $updated];
-		}
-	}
+            return ['ok' => true, 'errors' => [], 'updated' => $updated];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'errors' => ['Ошибка пересоздания: ' . $e->getMessage()], 'updated' => $updated];
+        }
+    }
 }

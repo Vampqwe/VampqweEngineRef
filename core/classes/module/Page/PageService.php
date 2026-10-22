@@ -69,15 +69,15 @@ class PageService
         $slug = $this->normalizeSlug($slug);
 
         $sql = "
-            SELECT 
-                p.*, 
-                a.name AS author_name, 
+            SELECT
+                p.*,
+                a.name AS author_name,
                 a.bio AS author_bio,
                 a.photo AS author_photo,
                 a.schema_person AS author_schema
             FROM pages p
             LEFT JOIN authors a ON p.author_id = a.id AND a.is_active = 1
-            WHERE p.slug = :slug 
+            WHERE p.slug = :slug
               AND p.status = 'published'
             LIMIT 1
         ";

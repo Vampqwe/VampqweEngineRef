@@ -90,7 +90,7 @@ class AuthController
         // Rate limit: защита от брутфорса
         $ip = $request->getIp();
         $rateLimit = $this->security->attempt('admin:login:' . $ip);
-        
+
         if (!$rateLimit['allowed']) {
             $this->adminService->setFlash('error', 'Слишком много попыток входа. Попробуйте позже.');
             return Response::redirect('/admin/login');

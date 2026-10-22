@@ -26,18 +26,18 @@ class ConfigViewerController
     public function index(Request $request): Response
 {
     error_log('ConfigViewerController::index() START');
-    
+
     try {
         error_log('ConfigViewerController: parser = ' . get_class($this->parser));
         error_log('ConfigViewerController: calling parse()');
-        
+
         $data = $this->parser->parse();
-        
+
         error_log('ConfigViewerController: parse() returned sections: ' . count($data['sections'] ?? []));
     } catch (\Throwable $e) {
         error_log('ConfigViewerController ERROR: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         $data = [
-            'sections' => [], 
+            'sections' => [],
             'meta' => [
                 'error' => 'Ошибка парсера: ' . $e->getMessage(),
                 'file' => $e->getFile(),
@@ -45,7 +45,7 @@ class ConfigViewerController
             ]
         ];
     }
-    
+
     $flash = $this->adminService->getFlash();
 
     $html = $this->template->render('admin/config/index', [
@@ -95,20 +95,20 @@ class ConfigViewerController
         $superEmail = $config->get('SUPER_ADMIN_EMAIL', '');
         return $superEmail !== '' && strcasecmp((string) ($admin['email'] ?? ''), $superEmail) === 0;
     }
-	
-	private function typeLabel(string $type): string
-	{
-		return match ($type) {
-			'bool' => 'логическое',
-			'int' => 'число',
-			'url' => 'URL',
-			'email' => 'email',
-			'ip' => 'IP/CIDR',
-			'hash' => 'хеш',
-			'password_hash' => 'bcrypt',
-			'sensitive' => 'секрет',
-			'text' => 'текст',
-			default => $type,
-		};
-	}
+
+    private function typeLabel(string $type): string
+    {
+        return match ($type) {
+            'bool' => 'логическое',
+            'int' => 'число',
+            'url' => 'URL',
+            'email' => 'email',
+            'ip' => 'IP/CIDR',
+            'hash' => 'хеш',
+            'password_hash' => 'bcrypt',
+            'sensitive' => 'секрет',
+            'text' => 'текст',
+            default => $type,
+        };
+    }
 }

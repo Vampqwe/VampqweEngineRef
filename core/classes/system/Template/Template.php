@@ -309,17 +309,17 @@ class Template
         return '';
     }
 
-	/**
-	 * Получить содержимое секции (для @yield)
-	 */
-	public function yieldSection(string $name, string|null $default = ''): string
-	{
-		if (!isset($this->sections[$name]) || $this->sections[$name]->isEmpty()) {
-			return $default ?? '';
-		}
+    /**
+     * Получить содержимое секции (для @yield)
+     */
+    public function yieldSection(string $name, string|null $default = ''): string
+    {
+        if (!isset($this->sections[$name]) || $this->sections[$name]->isEmpty()) {
+            return $default ?? '';
+        }
 
-		return $this->sections[$name]->getWithParent();
-	}
+        return $this->sections[$name]->getWithParent();
+    }
 
     // ─── Глобальные переменные ───
 
@@ -536,7 +536,7 @@ class Template
      */
     private function evaluate(string $compiledCode, array $data, string $templateName): string
     {
-        // Гарантируем наличие глобальных переменных, чтобы избежать Warning 
+        // Гарантируем наличие глобальных переменных, чтобы избежать Warning
         // при вычислении аргументов в @yield('title', app_name)
         $data = array_merge([
             'app_name' => $this->getShared('app_name', 'Достойный уход'),
@@ -544,9 +544,9 @@ class Template
         ], $data);
 
         extract($data, EXTR_SKIP);
-        
+
         $__template = $this;
-        
+
         ob_start();
         try {
             eval('?>' . $compiledCode);
@@ -554,15 +554,15 @@ class Template
             ob_end_clean();
             throw TemplateException::compilationFailed($templateName, $e->getMessage());
         }
-        
+
         return ob_get_clean() ?: '';
     }
-	
-		/**
-	 * Безопасный вывод HTML-контента (с санитизацией)
-	 */
-	public function safeHtml(string $html): string
-	{
-		return HtmlSanitizer::clean($html);
-	}
+
+        /**
+     * Безопасный вывод HTML-контента (с санитизацией)
+     */
+    public function safeHtml(string $html): string
+    {
+        return HtmlSanitizer::clean($html);
+    }
 }

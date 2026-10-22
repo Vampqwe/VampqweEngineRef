@@ -32,18 +32,18 @@ class SchemaService
 public function getAllSchemas(int $page = 1, int $perPage = 20): array
 {
     $offset = ($page - 1) * $perPage;
-    
+
     // ВАЖНО: поле s.data обязательно — оно используется в array_map ниже
     $sql = "
         SELECT s.id, s.schema_type, s.route, s.page_id, s.data,
-               p.title as page_title, 
+               p.title as page_title,
                s.priority, s.is_active, s.created_at, s.updated_at
         FROM schema_org s
         LEFT JOIN pages p ON s.page_id = p.id
         ORDER BY s.priority DESC, s.id DESC
         LIMIT {$perPage} OFFSET {$offset}
     ";
-    
+
     $schemas = $this->db->fetchAll($sql);
     $total = (int) $this->db->fetchColumn("SELECT COUNT(*) FROM schema_org");
 
@@ -75,7 +75,7 @@ public function getAllSchemas(int $page = 1, int $perPage = 20): array
     public function getSchema(int $id): ?array
     {
         $row = $this->db->fetchOne(
-            "SELECT id, page_id, route, schema_type, data, priority, is_active 
+            "SELECT id, page_id, route, schema_type, data, priority, is_active
              FROM schema_org WHERE id = :id",
             ['id' => $id]
         );
@@ -111,7 +111,7 @@ public function getAllSchemas(int $page = 1, int $perPage = 20): array
     {
         $errors = [];
         $schemaType = trim((string) ($raw['schema_type'] ?? ''));
-        
+
         if ($schemaType === '' || !in_array($schemaType, self::ALLOWED_SCHEMA_TYPES, true)) {
             $errors[] = 'Выберите корректный тип схемы из списка.';
         }
@@ -135,7 +135,7 @@ public function getAllSchemas(int $page = 1, int $perPage = 20): array
             $decoded = json_decode($jsonData, true);
             $jsonData = is_array($decoded) ? $decoded : null;
         }
-        
+
         if (!is_array($jsonData) || empty($jsonData)) {
             $errors[] = 'Данные схемы должны быть валидным непустым JSON-объектом.';
         } else {
@@ -176,7 +176,7 @@ public function getAllSchemas(int $page = 1, int $perPage = 20): array
         try {
             if ($id === null) {
                 $this->db->execute(
-                    "INSERT INTO schema_org (page_id, route, schema_type, data, priority, is_active) 
+                    "INSERT INTO schema_org (page_id, route, schema_type, data, priority, is_active)
                      VALUES (:page_id, :route, :schema_type, :data, :priority, :is_active)",
                     [
                         'page_id' => $d['page_id'],
@@ -190,8 +190,8 @@ public function getAllSchemas(int $page = 1, int $perPage = 20): array
                 $id = (int) $this->db->fetchColumn("SELECT LAST_INSERT_ID()");
             } else {
                 $this->db->execute(
-                    "UPDATE schema_org SET page_id = :page_id, route = :route, 
-                     schema_type = :schema_type, data = :data, priority = :priority, 
+                    "UPDATE schema_org SET page_id = :page_id, route = :route,
+                     schema_type = :schema_type, data = :data, priority = :priority,
                      is_active = :is_active, updated_at = NOW() WHERE id = :id",
                     [
                         'id' => $id,

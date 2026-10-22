@@ -80,7 +80,7 @@ class ConfigFileParser
             // 2. Комментарий с #
             if (str_starts_with($trimmed, '#')) {
                 $text = substr($trimmed, 1);
-                
+
                 // Проверяем, является ли это разделителем секции: # ═══ НАЗВАНИЕ ═══
                 if (preg_match('/^\s*[═\-=]{2,}\s*(.+?)\s*[═\-=]{2,}\s*$/u', $text, $m)) {
                     $title = trim($m[1]);

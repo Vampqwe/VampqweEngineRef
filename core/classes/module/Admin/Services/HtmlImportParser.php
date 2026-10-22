@@ -42,8 +42,8 @@ class HtmlImportParser
     private array $warnings = [];
     /** Кэш картинок original => local (в т.ч. неудачные попытки => null) */
     private array $imageCache = [];
-	
-	
+
+
     public function __construct(Config $config)
     {
         $this->config = $config;
@@ -51,20 +51,20 @@ class HtmlImportParser
         // Единая точка управления правилами парсинга — config/import-parser.php
         $rulesFile = dirname(__DIR__, 4) . '/config/import-parser.php';
         $this->rules = is_file($rulesFile) ? (array) require $rulesFile : [];
-        
+
         // Получаем реальный путь к storage (с правильным регистром)
         // Корень проекта — каноническая настройка APP_ROOT_PATH (единый резолвер,
         // см. Config::getStoragePath()). storage/ всегда вычисляется от корня,
         // устаревший FS_BASE_PATH для пути больше не используется.
         $configBasePath = $config->getStoragePath();
         $realBasePath = realpath($configBasePath);
-        
+
         if ($realBasePath === false) {
             throw new \RuntimeException(
                 "storage/ не существует: {$configBasePath}"
                 . ' (проверьте APP_ROOT_PATH в config.env)');
         }
-        
+
         $this->basePath = $realBasePath;
         $this->uploadDir = $this->basePath . DIRECTORY_SEPARATOR
             . trim((string) ($this->rules['upload_dir'] ?? 'uploads/import'), '/');

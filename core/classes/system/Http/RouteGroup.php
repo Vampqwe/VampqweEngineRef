@@ -44,19 +44,19 @@ class RouteGroup
     /**
      * Добавить маршрут в группу
      */
-	public function addRoute(string $path, Method $method, Closure|string|array $handler): Route
-	{
-		$fullPath = $this->prefix . $path;
-		$route = $this->router->addRoute($fullPath, $method, $handler);
-		
-		// Добавляем middleware группы к маршруту
-		$middlewares = $this->middlewareStack->all();
-		if (!empty($middlewares)) {
-			$route->middleware(...$middlewares);
-		}
-		
-		return $route;
-	}
+    public function addRoute(string $path, Method $method, Closure|string|array $handler): Route
+    {
+        $fullPath = $this->prefix . $path;
+        $route = $this->router->addRoute($fullPath, $method, $handler);
+
+        // Добавляем middleware группы к маршруту
+        $middlewares = $this->middlewareStack->all();
+        if (!empty($middlewares)) {
+            $route->middleware(...$middlewares);
+        }
+
+        return $route;
+    }
     public function get(string $path, Closure|string|array $handler): Route
     {
         return $this->addRoute($path, Method::GET, $handler);
