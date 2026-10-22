@@ -26,6 +26,11 @@ return [
     // Файл промежуточных стилей в storage (относительный путь).
     'styles_file' => 'neutral-style.css',
 
+    // Файл промежуточного инлайн-JS в storage (относительный путь).
+    // Содержимое <script> без src выносится сюда и подключается как
+    // /storage/neutral-js.js.
+    'scripts_file' => 'neutral-js.js',
+
     // Максимум редиректов при скачивании изображений.
     'image_max_redirects' => 3,
 
@@ -142,6 +147,10 @@ return [
             'target' => ['table' => 'pages', 'column' => 'scripts', 'mode' => 'json_array'],
             'default' => ['/assets/js/main.js'],
         ],
+
+        // Инлайн-JS страницы автоматически выносится в storage/neutral-js.js
+        // (парсер добавляет '/storage/neutral-js.js' в список scripts),
+        // отдельного блока для этого не требуется.
     ],
 
     /**

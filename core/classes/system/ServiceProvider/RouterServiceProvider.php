@@ -148,8 +148,9 @@ class RouterServiceProvider extends ServiceProvider
             }
 
             $rel = (string) $request->getAttribute('file', '');
-            // Белый список: только neutral-style.css и картинки из uploads/import
-            if ($rel !== 'neutral-style.css' && !preg_match('#^uploads/import/[A-Za-z0-9._-]+$#', $rel)) {
+            // Белый список: neutral-style.css, neutral-js.js и картинки из uploads/import
+            if ($rel !== 'neutral-style.css' && $rel !== 'neutral-js.js'
+                && !preg_match('#^uploads/import/[A-Za-z0-9._-]+$#', $rel)) {
                 return Response::text('Not Found', StatusCode::NOT_FOUND);
             }
 
@@ -160,6 +161,7 @@ class RouterServiceProvider extends ServiceProvider
 
             $mime = match (strtolower(pathinfo($real, PATHINFO_EXTENSION))) {
                 'css'         => 'text/css; charset=UTF-8',
+                'js'          => 'application/javascript; charset=UTF-8',
                 'png'         => 'image/png',
                 'jpg', 'jpeg' => 'image/jpeg',
                 'gif'         => 'image/gif',
@@ -167,7 +169,7 @@ class RouterServiceProvider extends ServiceProvider
                 'svg'         => 'image/svg+xml',
                 default       => 'application/octet-stream',
             };
-            if (!in_array($mime, ['text/css; charset=UTF-8', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'], true)) {
+            if (!in_array($mime, ['text/css; charset=UTF-8', 'application/javascript; charset=UTF-8', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'], true)) {
                 return Response::text('Not Found', StatusCode::NOT_FOUND);
             }
 
