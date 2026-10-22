@@ -391,15 +391,37 @@ final class HtmlImportParserTest extends TestCase
         self::assertStringContainsString('Меню', $texts['nav']);
     }
 
-    public function testStylesCollectedButNotWrittenOnParse(): void
+    public function testStylesAndScriptsStayInContentNoNeutralFiles(): void
     {
-        $html = '<html><head><style>.x{color:red}</style></head><body><p class="x">т</p></body></html>';
+        // Новая схема: <style>/<script> НЕ выносятся в neutral-файлы —
+        // они остаются внутри контента, а промежуточные файлы не создаются.
+        $html = '<html><head><style>.x{color:red}</style></head>'
+            . '<body><!-- ОСНОВНОЙ КОНТЕНТ --><p class="x">т</p>'
+            . '<script>console.log(1)</script><!-- FOOTER --></body></html>';
         $parser = new HtmlImportParser(Config::getInstance());
 
         $parsed = $parser->parse($html);
 
-        self::assertStringContainsString('.x{color:red}', (string) $parsed['styles']);
-        // На этапе разбора файл стилей НЕ создаётся — только после commitStyles()
+        self::assertStringNotContainsString('.x{color:red}', (string) $parsed['content']);
+        // Ключей neutral-схемы в результате больше нет
+        self::assertArrayNotHasKey('styles', $parsed);
+        self::assertArrayNotHasKey('inline_scripts', $parsed);
         self::assertFileDoesNotExist($this->tmpRoot . '/storage/neutral-style.css');
+        self::assertFileDoesNotExist($this->tmpRoot . '/storage/neutral-js.js');
+    }
+
+    public function testCleanPreserveAssetsKeepsStyleAndScript(): void
+    {
+        // sanitize-режим импорта сохраняет <style>/<script> как есть
+        $dirty = '<div style="color:red"><style>.a{color:blue}</style>'
+            . '<script>var x = 1 < 2;</script><iframe src="javascript:alert(1)"></iframe>'
+            . '<em>текст</em></div>';
+
+        $cleaned = \Core\System\Security\HtmlSanitizer::cleanPreserveAssets($dirty);
+
+        self::assertStringContainsString('<style>.a{color:blue}</style>', $cleaned);
+        self::assertStringContainsString('<script>var x = 1 < 2;</script>', $cleaned);
+        self::assertStringNotContainsString('iframe', $cleaned);
+        self::assertStringContainsString('текст', $cleaned);
     }
 }
