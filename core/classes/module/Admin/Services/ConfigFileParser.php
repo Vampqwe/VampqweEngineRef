@@ -67,42 +67,47 @@ class ConfigFileParser
 
         $sections[$currentSection] = ['label' => 'Общие', 'icon' => '⚙️', 'keys' => [], 'commented_keys' => [], 'comments' => []];
         $lineIndex = 0;
+        // Контекст для заголовков вида: "# =====" / "# НАЗВАНИЕ" / "# =====".
+        $pendingDividerLine = null;   // строка чистого разделителя перед текстовым заголовком
 
         foreach ($lines as $line) {
             $lineIndex++;
             $trimmed = trim($line);
 
-            // 1. Пустая строка
+            // 1. Пустая строка (разделители сбрасываем: пустая строка разрывает блок)
             if ($trimmed === '') {
+                $pendingDividerLine = null;
                 continue;
             }
 
             // 2. Комментарий с #
             if (str_starts_with($trimmed, '#')) {
+                $isPureDivider = (bool) preg_match('/^#+\s*=+\s*$/', $trimmed);
+
+                // Заголовок из одной текстовой строки между двумя чистыми
+                // разделителями: "# =====" / "# СУПЕР-АДМИНИСТРАТОР" / "# =====".
+                // Чистый разделитель — только ASCII "=" после "#"; иначе кириллический
+                // текст комментария ошибочно открывал бы секции у соседних строк.
+                if (!$isPureDivider && $pendingDividerLine !== null && $this->isSectionHeader($trimmed, true)) {
+                    $title = $this->extractTitle($trimmed);
+                    $this->openSection($sections, $currentSection, $title, $lineIndex, $sectionLabels, $pendingDividerLine);
+                    $pendingDividerLine = null;
+                    continue;
+                }
+
                 // Разделитель секции: "# ===== НАЗВАНИЕ =====", "# ═══ НАЗВАНИЕ ═══"
-                // или просто заголовок из одних букв/пробелов "# СУПЕР-АДМИНИСТРАТОР".
+                // или чистая линия "# =====".
                 if ($this->isSectionHeader($trimmed)) {
-                    $title = preg_replace('/^#+\s*|\s*[═=\-#]+\s*$/', '', $trimmed) ?? '';
-                    $title = trim($title);
+                    $title = $this->extractTitle($trimmed);
                     if ($title !== '') {
-                        $sectionName = $this->slugifySection($title);
-                        $currentSection = $sectionName;
-                        if (!isset($sections[$currentSection])) {
-                            $sections[$currentSection] = [
-                                'label' => $sectionLabels[$sectionName]['label'] ?? $title,
-                                'icon' => $sectionLabels[$sectionName]['icon'] ?? '📦',
-                                'keys' => [],
-                                'commented_keys' => [],
-                                'comments' => [],
-                            ];
-                        }
-                        $sections[$currentSection]['comments'][] = [
-                            'type' => 'section-divider',
-                            'label' => $title,
-                            'line' => $lineIndex,
-                        ];
-                        continue;
+                        $this->openSection($sections, $currentSection, $title, $lineIndex, $sectionLabels);
+                        $pendingDividerLine = null;
+                    } else {
+                        // чистый разделитель без текста: запоминаем — возможно,
+                        // следующая строка содержит название секции
+                        $pendingDividerLine = $lineIndex;
                     }
+                    continue;
                 }
                 // Закомментированная опция: "# KEY=VALUE" — выводим отдельным списком
                 if (preg_match('/^#+\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/', $trimmed, $m)) {
@@ -110,6 +115,7 @@ class ConfigFileParser
                         strtoupper($m[1]), $this->unquoteValue(trim($m[2])), $lineIndex, true
                     );
                     $sections[$currentSection]['commented_keys'][] = $row;
+                    $pendingDividerLine = null;
                     continue;
                 }
                 // Обычный комментарий
@@ -118,6 +124,7 @@ class ConfigFileParser
                     'text' => ltrim(substr($trimmed, 1)),
                     'line' => $lineIndex,
                 ];
+                $pendingDividerLine = null;
                 continue;
             }
 
@@ -126,10 +133,12 @@ class ConfigFileParser
                 $sections[$currentSection]['keys'][] = $this->buildKeyRow(
                     strtoupper($m[1]), $this->unquoteValue(trim($m[2])), $lineIndex, false
                 );
+                $pendingDividerLine = null;
                 continue;
             }
 
             // 4. Всё остальное — не конфигурационная строка, игнорируем
+            $pendingDividerLine = null;
         }
 
         // Удаляем пустые секции
@@ -278,11 +287,19 @@ class ConfigFileParser
     }
 
     /**
-     * Определяет заголовок/разделитель секции: строка из "#" с декоративными
-     * символами (═ = -) и текстом без "=", либо просто строка из "=====".
+     * Определяет заголовок/разделитель секции. Поддерживаются варианты:
+     *  - "# =====" (чистый разделитель без текста);
+     *  - "# ═══ ТЕКСТ ═══" / "# ===== ТЕКСТ =====" (декоративные символы вокруг);
+     *  - одиночная строка заглавного текста между двумя чистыми разделителями
+     *    (например "# СУПЕР-АДМИНИСТРАТОР" между строками "# =====") —
+     *    распознаётся в parse() по контексту и помечается флагом $bareText.
      */
-    private function isSectionHeader(string $trimmed): bool
+    private function isSectionHeader(string $trimmed, bool $bareText = false): bool
     {
+        if ($bareText) {
+            // текстовая строка между разделителями: не должна быть опцией KEY=...
+            return !preg_match('/^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=/', $trimmed);
+        }
         if (!preg_match('/^#+[^A-Za-z0-9]*$/', $trimmed)) {
             // не чистый разделитель — проверяем вариант "# ═══ ТЕКСТ ═══"
             $body = preg_replace('/^#+\s*/', '', $trimmed) ?? '';
@@ -297,6 +314,16 @@ class ConfigFileParser
             return trim($inner) !== '' && !str_contains($inner, '=');
         }
         return true; // "# =====" без текста — тоже разделитель (title пустой)
+    }
+
+    /**
+     * Извлекает текст заголовка из строки-разделителя любого вида.
+     */
+    private function extractTitle(string $trimmed): string
+    {
+        $title = preg_replace('/^#+\s*/', '', $trimmed) ?? '';
+        $title = preg_replace('/[═=\-]+/u', ' ', $title) ?? '';
+        return trim(preg_replace('/\s+/u', ' ', $title) ?? '');
     }
 
     private function detectType(string $key, string $value): string
@@ -324,11 +351,67 @@ class ConfigFileParser
             'общие' => 'general', 'email' => 'email', 'smtp' => 'email',
             'мастер установки' => 'install', 'локализация' => 'general',
         ];
-        $lower = mb_strtolower($label, 'UTF-8');
+        $lower = $this->lowercaseUtf8($label);
         foreach ($map as $k => $v) {
             if (str_contains($lower, $k)) return $v;
         }
-        return preg_replace('/[^a-z0-9]/u', '_', $lower) ?: 'general';
+        // Неизвестный заголовок: латиница/цифры в слаг, иначе общий раздел.
+        $ascii = preg_replace('/[^a-z0-9]/', '_', strtolower($lower)) ?? '';
+        $ascii = trim(preg_replace('/_+/', '_', $ascii) ?? '', '_');
+        return $ascii !== '' ? $ascii : 'general';
+    }
+
+    /**
+     * Безопасное приведение к нижнему регистру для UTF-8 без зависимости от
+     * расширения mbstring (на серверах без mb_string mb_strtolower() — fatal).
+     */
+    private function lowercaseUtf8(string $text): string
+    {
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($text, 'UTF-8');
+        }
+        if (function_exists('iconv')) {
+            $converted = @iconv('UTF-8', 'UTF-8//TRANSLIT', $text);
+            if ($converted !== false) {
+                $text = $converted;
+            }
+        }
+        return strtolower($text);
+    }
+
+    /**
+     * Открывает новую секцию по заголовку: регистрирует её (если ещё нет),
+     * делает текущей и добавляет запись-разделитель для отображения.
+     *
+     * @param array<string,array> $sections       ссылка на реестр секций
+     * @param string              $currentSection ссылка на имя текущей секции
+     * @param array<string,array{label:string,icon:string}> $sectionLabels
+     */
+    private function openSection(
+        array &$sections,
+        string &$currentSection,
+        string $title,
+        int $lineIndex,
+        array $sectionLabels,
+        ?int $dividerLine = null
+    ): void {
+        $sectionName = $this->slugifySection($title);
+        // Повторный заголовок той же секции — не дублируем, только меняем текущую.
+        $currentSection = $sectionName;
+        if (!isset($sections[$sectionName])) {
+            $sections[$sectionName] = [
+                'label' => $sectionLabels[$sectionName]['label'] ?? $title,
+                'icon' => $sectionLabels[$sectionName]['icon'] ?? '📦',
+                'keys' => [],
+                'commented_keys' => [],
+                'comments' => [],
+            ];
+        }
+        $sections[$sectionName]['comments'][] = [
+            'type' => 'section-divider',
+            'label' => $title,
+            'line' => $dividerLine ?? $lineIndex,
+        ];
     }
 
     private function backupConfig(string $file): void
