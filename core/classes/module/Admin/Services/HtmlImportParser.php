@@ -35,12 +35,8 @@ class HtmlImportParser
     private string $uploadDir;
     /** Промежуточный файл стилей: storage/neutral-style.css */
     private string $stylesFile;
-    /** Промежуточный файл JS: storage/neutral-js.js */
-    private string $jsFile;
     private array $downloadedImages = [];
     private string $extractedStyles = '';
-    /** Инлайн-JS (<script> без src), собранный из всего документа */
-    private string $extractedScripts = '';
     private array $warnings = [];
     /** Кэш картинок original => local (в т.ч. неудачные попытки => null) */
     private array $imageCache = [];
@@ -73,9 +69,6 @@ class HtmlImportParser
         // Стили импортируемых страниц складываются в промежуточный файл стилей
         $this->stylesFile = $this->basePath . DIRECTORY_SEPARATOR
             . trim((string) ($this->rules['styles_file'] ?? 'neutral-style.css'), '/');
-        // Инлайн-JS импортируемых страниц — в промежуточный файл neutral-js.js
-        $this->jsFile = $this->basePath . DIRECTORY_SEPARATOR
-            . trim((string) ($this->rules['scripts_file'] ?? 'neutral-js.js'), '/');
 
         // Создаём директории
         if (!is_dir($this->uploadDir)) {
@@ -114,7 +107,6 @@ class HtmlImportParser
     {
         $this->downloadedImages = [];
         $this->extractedStyles = '';
-        $this->extractedScripts = '';
         $this->warnings = [];
         $this->imageCache = [];
 
@@ -143,11 +135,6 @@ class HtmlImportParser
         // контентных блоков; HTML-разметка и все классы остаются без изменений.
         $this->collectStyles($xpath);
         $this->removeStyleTags($doc, $xpath);
-
-        // Инлайн-<script> (без src, не JSON-LD) всего документа — в neutral-js.js.
-        // Пути скриптов собираются ДО удаления тегов (см. extractScripts).
-        $inlineJsPaths = $this->collectInlineScripts($doc, $xpath);
-        $this->removeInlineScriptTags($doc, $xpath);
 
         $blockResults = [];   // имя блока => ['value'|'rows', 'found', ...]
         $values = [];         // колонка => скалярное значение для pages
@@ -221,12 +208,6 @@ class HtmlImportParser
         if ($scripts === []) {
             $scripts = ['/assets/js/main.js'];
         }
-        // Инлайн-JS страницы вынесен в neutral-js.js — подключаем его к списку
-        foreach ($inlineJsPaths as $p) {
-            if (!in_array($p, $scripts, true)) {
-                $scripts[] = $p;
-            }
-        }
 
         return [
             'title' => (string) ($values['title'] ?? ''),
@@ -236,10 +217,8 @@ class HtmlImportParser
             'schemas' => $schemas,
             'scripts' => $scripts,
             'styles' => $this->extractedStyles,
-            'inline_scripts' => $this->extractedScripts,
             'images_count' => count($this->downloadedImages),
             'styles_extracted' => strlen($this->extractedStyles),
-            'scripts_extracted' => strlen($this->extractedScripts),
             'downloaded_images' => $this->downloadedImages,
             'warnings' => $this->warnings,
             // Новые поля: полный отчёт по блокам и готовые к записи данные
@@ -956,80 +935,8 @@ class HtmlImportParser
     }
 
     /**
-     * Собирает инлайн-JS (теги <script> без src, кроме JSON-LD и прочего
-     * non-JS type) в память для последующей записи в neutral-js.js.
-     * Возвращает список URL-путей движка ['/storage/neutral-js.js'], если
-     * найден хотя бы один непустой скрипт.
-     *
-     * @return string[]
-     */
-    private function collectInlineScripts(DOMDocument $doc, DOMXPath $xpath): array
-    {
-        $nodes = $xpath->query('//script[not(@src)]');
-        if ($nodes === false || $nodes->length === 0) {
-            return [];
-        }
-
-        $collected = 0;
-        foreach ($nodes as $node) {
-            /** @var \DOMElement $node */
-            // Пропускаем не-JS типы: application/ld+json, text/template и т.п.
-            $type = strtolower(trim($node->getAttribute('type')));
-            if ($type !== '' && !in_array($type, ['text/javascript', 'application/javascript', 'module'], true)) {
-                continue;
-            }
-            if ($node->hasAttribute('src')) {
-                continue;
-            }
-
-            $js = trim($node->textContent);
-            if ($js === '') {
-                continue;
-            }
-
-            $this->extractedScripts .= $js . "\n";
-            $collected++;
-        }
-
-        if ($collected === 0) {
-            return [];
-        }
-
-        $rel = trim((string) ($this->rules['scripts_file'] ?? 'neutral-js.js'), '/');
-
-        return ['/storage/' . $rel];
-    }
-
-    /**
-     * Удаляет из DOM инлайн-теги <script> (без src), содержимое которых уже
-     * вынесено в neutral-js.js. Теги с src и JSON-LD остаются нетронутыми —
-     * их обрабатывают extractScripts()/extractSchema().
-     */
-    private function removeInlineScriptTags(DOMDocument $doc, DOMXPath $xpath): void
-    {
-        $nodes = $xpath->query('//script[not(@src)]');
-        if ($nodes === false) {
-            return;
-        }
-        $list = [];
-        foreach ($nodes as $node) {
-            /** @var \DOMElement $node */
-            $type = strtolower(trim($node->getAttribute('type')));
-            if ($type !== '' && !in_array($type, ['text/javascript', 'application/javascript', 'module'], true)) {
-                continue; // JSON-LD и пр. не трогаем
-            }
-            $list[] = $node;
-        }
-        foreach ($list as $node) {
-            $node->parentNode?->removeChild($node);
-        }
-    }
-
-    /**
      * Запись извлечённых стилей в промежуточный neutral-style.css с дедупликацией.
      * Повторяющиеся правила (одинаковый селектор) заменяются новыми значениями.
-     * @media/@keyframes/@supports-блоки сохраняются целиком (вложенные правила
-     * не участвуют в дедупликации по селектору — иначе они бы терялись).
      * Вызывается только на этапе confirm (чтобы предпросмотр не имел побочных эффектов).
      */
     public function commitStyles(string $css): bool
@@ -1039,116 +946,49 @@ class HtmlImportParser
             return true;
         }
 
-        $existingChunks = [];
+        $existingRules = [];
         if (is_file($this->stylesFile)) {
             $existingCss = (string)file_get_contents($this->stylesFile);
-            $existingChunks = $this->parseCssChunks($existingCss);
+            $existingRules = $this->parseCssRules($existingCss);
         }
 
-        $newChunks = $this->parseCssChunks($css);
+        $newRules = $this->parseCssRules($css);
 
         // Дедупликация: одинаковые селекторы заменяем (последнее значение побеждает),
-        // новые селекторы дописываем в конец. At-rules (@media...) хранятся под
-        // ключом '@media...{...' и не сливаются между собой.
-        $merged = $existingChunks['simple'] + [];
-        foreach ($newChunks['simple'] as $selector => $body) {
+        // новые селекторы дописываем в конец
+        $merged = $existingRules;
+        foreach ($newRules as $selector => $body) {
             $merged[$selector] = $body;
         }
-        $atRules = array_merge($existingChunks['at'], $newChunks['at']);
 
         $out = "/* neutral-style.css — стили, извлечённые импортом страниц (" . date('Y-m-d H:i:s') . ") */\n\n";
         foreach ($merged as $selector => $body) {
             $out .= $selector . " {" . $body . "}\n";
-        }
-        foreach ($atRules as $chunk) {
-            $out .= "\n" . $chunk . "\n";
         }
 
         return file_put_contents($this->stylesFile, $out, LOCK_EX) !== false;
     }
 
     /**
-     * Разбивает CSS на «простые правила» (селектор => тело) и at-блоки
-     * (@media/@supports/@keyframes — сохраняются как есть, включая вложенность).
-     *
-     * @return array{simple: array<string,string>, at: string[]}
+     * Разбивает CSS на карту «селектор => тело правила» (поверхностный парсер без учёта @media).
      */
-    private function parseCssChunks(string $css): array
+    private function parseCssRules(string $css): array
     {
+        $rules = [];
         // Убираем комментарии
         $css = preg_replace('#/\*.*?\*/#s', '', $css) ?? '';
 
-        $simple = [];
-        $atBlocks = [];
-
-        $len = strlen($css);
-        $i = 0;
-        $buffer = '';
-        while ($i < $len) {
-            $ch = $css[$i];
-            if ($ch === '{') {
-                // Найден блок: buffer — префикс (селектор или at-преамбула)
-                $depth = 1;
-                $start = $i + 1;
-                $j = $start;
-                while ($j < $len && $depth > 0) {
-                    if ($css[$j] === '{') {
-                        $depth++;
-                    } elseif ($css[$j] === '}') {
-                        $depth--;
-                    }
-                    $j++;
+        if (preg_match_all('/([^{}]+)\{([^{}]*)\}/s', $css, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $selector = preg_replace('/\s+/', ' ', trim($m[1]));
+                $body = trim($m[2]);
+                if ($selector !== '' && $body !== '') {
+                    $rules[$selector] = $body;
                 }
-                $body = substr($css, $start, $j - $start - 1);
-                $prefix = preg_replace('/\s+/', ' ', trim($buffer));
-
-                if ($prefix !== '' && str_starts_with($prefix, '@')) {
-                    // At-rule: @media/@supports храним целиком с телом;
-                    // @import/@charset без тела игнорируем как потенциально опасные внешние ссылки.
-                    if (!preg_match('~^@(import|charset)~i', $prefix)) {
-                        $atBlocks[] = $prefix . ' {' . trim($body) . "\n}";
-                    }
-                } elseif ($prefix !== '' && trim($body) !== '') {
-                    $simple[$prefix] = trim($body);
-                }
-
-                $buffer = '';
-                $i = $j;
-                continue;
             }
-            $buffer .= $ch;
-            $i++;
         }
 
-        return ['simple' => $simple, 'at' => $atBlocks];
-    }
-
-    /**
-     * Запись извлечённого инлайн-JS в промежуточный neutral-js.js.
-     * Новые скрипты дописываются после существующих (с разделителем-маркером
-     * импорта), полные дубликаты текста пропускаются.
-     * Вызывается только на этапе подтверждения импорта.
-     */
-    public function commitScripts(string $js): bool
-    {
-        $js = trim($js);
-        if ($js === '') {
-            return true;
-        }
-
-        $existing = is_file($this->jsFile) ? (string) file_get_contents($this->jsFile) : '';
-
-        // Дедупликация по тексту блока
-        if ($existing !== '' && str_contains($existing, $js)) {
-            return true;
-        }
-
-        $header = "/* neutral-js.js — инлайн-скрипты, вынесенные импортом страниц */\n";
-        $out = ($existing === '' ? $header : rtrim($existing) . "\n")
-            . "\n/* --- импорт " . date('Y-m-d H:i:s') . " --- */\n"
-            . "(function(){\n" . $js . "\n})();\n";
-
-        return file_put_contents($this->jsFile, $out, LOCK_EX) !== false;
+        return $rules;
     }
 
     /**
