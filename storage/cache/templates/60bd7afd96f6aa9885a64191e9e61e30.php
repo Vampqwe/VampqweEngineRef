@@ -1,0 +1,104 @@
+
+
+
+<nav class="nav" id="site-nav">
+    <a href="/" class="nav-logo">Достойный уход</a>
+
+    <ul class="nav-menu" id="site-nav-menu">
+        <li><a href="/">Главная</a></li>
+
+        
+        <li class="has-dropdown">
+            <a href="#" class="nav-parent">Поддержка собак <span class="nav-arrow">▾</span></a>
+            <div class="nav-dropdown-bridge"></div>
+            <div class="nav-dropdown">
+                <div class="dropdown-group">
+                    <div class="dropdown-title">симптомы</div>
+                    <ul class="dropdown-list">
+                        <li><a href="trevoznye-simptomy-u-sobak-kak-raspoznat-skrytuu-bol-i-diskomfort">Тревожные симптомы у собак</a></li>
+                        <li><a href="simptomy-uhudsenia-sostoania-u-sobaki-kogda-bit-trevogu-103vetby">Симптомы ухудшения состояния у собаки</a></li>
+                        <li><a href="onkologia-u-sobak-v-terminalnoj-stadii-priznaki-i-podderzka">Онкология у собак в терминальной стадии</a></li>
+                        <li><a href="otkaz-ot-edy-i-vody-u-sobaki-diagnostika-obezvozivania-i-stimulacia-appetita">Отказ от еды и воды у собаки</a></li>
+                        <li><a href="serdecnaa-nedostatocnost-u-sobak-odyska-kasel-i-domasnij-monitoring">Сердечная недостаточность у собак</a></li>
+                    </ul>
+                </div>
+                <div class="dropdown-group">
+                    <div class="dropdown-title">уход</div>
+                    <ul class="dropdown-list">
+                        <li><a href="emocionalnaa-podderzka-sobaki-v-poslednie-dni-103vetby">Эмоциональная поддержка собаки</a></li>
+                        <li><a href="uhod-za-sobakoj-s-epilepsiej-v-pozilom-vozraste-103vetby">-за собакой с эпилепсией</a></li>
+                        <li><a href="palliativnyj-uhod-pri-onkologii-u-sobak-103vetby">-при онкологии у собак</a></li>
+                        <li><a href="uhod-za-serstu-lezacej-sobaki-rekomendacii-specialistov-103vetby">-за шерстью лежачей собаки</a></li>
+                        <li><a href="uhod-i-oblegcenie-boli-pri-artrite-u-vozrastnyh-sobak-103vetby">облегчение боли при артрите у возрастных собак</a></li>
+                        <li><a href="sozdanie-udobnogo-prostranstva-dla-lezacej-sobaki-103vetby">Создание удобного пространства для лежачей собаки</a></li>
+                        <li><a href="kormlenie-tazelobolnoj-sobaki-rekomendacii-specialistov-103vetby">Кормление тяжелобольной собаки</a></li>
+                        <li><a href="kontrol-boli-v-domasnih-usloviah-kak-pomoc-pitomcu-103vetby">Контроль боли в домашних условиях</a></li>
+                        <li><a href="uhod-pri-saharnom-diabete-u-pozilyh-sobak-103vetby">-при сахарном диабете у пожилых собак</a></li>
+                        <li><a href="uhod-za-sobakoj-s-demenciej-kak-pomoc-pitomcu-103vetby">-за собакой с деменцией: как помочь питомцу</a></li>
+                        <li><a href="uhod-za-vozrastnoj-sobakoj-s-paralicom-zadnih-konecnostej-103vetby">-за собакой с параличом задних конечностей</a></li>
+                        <li><a href="uhod-pri-hroniceskoj-diaree-u-pozilyh-sobak-103vetby">при хронической диарее у собак</a></li>
+                        <li><a href="uhod-pri-hroniceskom-pankreatite-u-vozrastnyh-sobak-starse-15-let-103vetby">-при хроническом панкреатите</a></li>
+                        <li><a href="uhod-pri-hroniceskih-zabolevaniah-legkih-u-pozilyh-sobak-103vetby">-при хронических заболеваниях лёгких</a></li>
+                        <li><a href="uhod-pri-anemii-u-pozilyh-sobak-rekomendacii-specialistov-103vetby">-при анемии у пожилых собак</a></li>
+                        <li><a href="oblegcenie-boli-pri-sustavnoj-boli-u-pozilyh-sobak-103vetby">Облегчение боли при суставной боли</a></li>
+                        <li><a href="uhod-pri-insulte-u-pozilyh-sobak-103vetby">-при инсульте у пожилых собак |</a></li>
+                        <li><a href="uhod-pri-zabolevaniah-peceni-u-poziloj-sobaki-103vetby">-при заболеваниях печени</a></li>
+                        <li><a href="progulki-s-tazelobolnoj-sobakoj-bezopasnost-i-komfort-103vetby">Прогулки с тяжелобольной собакой</a></li>
+                    </ul>
+                </div>
+            </div>
+        </li>
+
+        
+        <li class="has-dropdown">
+            <a href="#" class="nav-parent">Поддержка кошек <span class="nav-arrow">▾</span></a>
+            <div class="nav-dropdown-bridge"></div>
+            <div class="nav-dropdown">
+                <div class="dropdown-group">
+                    <div class="dropdown-title">симптомы</div>
+                    <ul class="dropdown-list">
+                        <li><a href="trevoznye-simptomy-u-kosek-kak-raspoznat-skrytuu-bolezn">Тревожные симптомы у кошек</a></li>
+                        <li><a href="demencia-u-pozilyh-kosek-priznaki-adaptacia-sredy-i-podderzka">Деменция</a></li>
+                        <li><a href="gipertireoz-u-kosek-simptomy-lecenie-i-palliativnaa-podderzka">Гипертиреоз</a></li>
+                        <li><a href="hroniceskaa-bolezn-pocek-u-kosek-priznaki-dieta-i-kacestvo-zizni">ХБП</a></li>
+                        <li><a href="tazelyj-stomatit-u-kosek-bol-otkaz-ot-edy-i-palliativnyj-uhod">Стоматит</a></li>
+                        <li><a href="astma-i-zabolevania-dyhatelnyh-putej-u-pozilyh-kosek-9-osibok-103vetby">Астма и заболевания дыхательных путей</a></li>
+                        <li><a href="gipertonia-i-vnezapnaa-slepota-u-kosek-kak-raspoznat-i-adaptirovat-sredu-103vetby"></a>Гипертония и внезапная слепота у кошек</li>
+                        <li><a href="limfoma-u-vozrastnyh-kosek-kak-raspoznat-lecit-i-prodlit-zizn-103vetby">Лимфома у возрастных кошек: как распознать</a></li>
+                        <li><a href="skrytaa-bol-v-rotovoj-polosti-stomatit-i-rezorbcia-zubov-forl-u-kosek-103vetby">Скрытая боль в ротовой полости</a></li>
+                        <li><a href="skrytaa-hroniceskaa-bol-u-pozilyh-kosek-kak-raspoznat-stradania-103vetby">Скрытая хроническая боль у пожилых кошек</a></li>
+                        <li><a href=""></a></li>
+                    </ul>
+                </div>
+                <div class="dropdown-group">
+                    <div class="dropdown-title">уход</div>
+                    <ul class="dropdown-list">
+                        <li><a href="fic-u-vozrastnoj-koski-uhod-kotoryj-prodlevaet-zizn-103vetby">-при FIC у возрастной кошки</a></li>
+                        <li><a href="tromboembolia-aorty-u-vozrastnoj-koski-uhod-i-cto-sokrasaet-zizn-103vetby">Тромбоэмболия аорты у возрастной кошки</a></li>
+                        <li><a href="uhod-za-poziloj-koskoj-s-pankreatitom-pocemu-skrytoe-vospalenie-casto-propuskaut-103vetby">-за пожилой кошкой с панкреатитом</a></li>
+                        <li><a href="palliativnyj-uhod-za-koskoj-komfort-pitanie-i-kontrol-boli">Паллиативный уход за кошкой</a></li>
+                        <li><a href="obezbolivanie-dla-kosek-bezopasnye-preparaty-i-skala-boli-feline-grimace-scale">Обезболивание для кошек</a></li>
+                        <li><a href="uhod-za-malopodviznoj-koskoj-lezanki-lotki-i-adaptacia-prostranstva">-за малоподвижной кошкой</a></li>
+                        <li><a href="pitanie-tazelobolnoj-koski-dieta-pri-hbp-stimulacia-appetita-i-zondovoe-kormlenie">Питание тяжелобольной кошки: диета при ХБП</a></li>
+                    </ul>
+                </div>
+            </div>
+        </li>
+
+        <li><a href="ocenka-kacestva-zizni-pitomca-skala-hhhhhmm-i-instrumenty-podderzki">Качество жизни</a></li>
+        <li><a href="test-kacestva-zizni-pitomca-hhhhhmm-onlajn-projti-za-3-minuty">Тест HHHHHMM</a></li>
+    </ul>
+
+    
+    <button class="nav-burger" id="nav-burger" type="button" aria-label="Меню" aria-expanded="false" aria-controls="mobile-menu">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+</nav>
+
+
+<div class="mobile-menu-overlay" id="mobile-overlay"></div>
+<aside class="mobile-menu" id="mobile-menu" aria-hidden="true">
+    <ul class="mobile-menu-list"><!-- заполняется скриптом menu.js --></ul>
+</aside>
