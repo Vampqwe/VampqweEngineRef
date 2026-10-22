@@ -1,1 +1,11 @@
-(empty content)
+config.env
+storage/.install_key
+storage/.install_seed
+storage/backups/
+logs/
+*.log
+storage/cache/*
+!storage/cache/.gitkeep
+storage/.rate_limits/
+storage/.installed
+note
