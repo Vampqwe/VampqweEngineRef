@@ -30,6 +30,7 @@ use Core\System\Http\MiddlewareStack;
 use Core\System\Http\Request;
 use Core\System\Http\Response;
 use Core\System\Security\SecurityManager;
+use Core\Module\Admin\Services\AdminService;
 
 /**
  * Композитный middleware группы /admin.
@@ -44,12 +45,12 @@ class AdminMiddleware implements Middleware
 {
     private MiddlewareStack $stack;
 
-    public function __construct(InstallService $installService, SecurityManager $security)
+    public function __construct(InstallService $installService, SecurityManager $security, ?AdminService $adminService = null)
     {
         $this->stack = (new MiddlewareStack())
             ->push(new InstallMiddleware($installService))
             ->push(new AuthMiddleware())
-            ->push(new CsrfMiddleware($security))
+            ->push(new CsrfMiddleware($security, $adminService))
             ->push(new AdminCspMiddleware());
     }
 

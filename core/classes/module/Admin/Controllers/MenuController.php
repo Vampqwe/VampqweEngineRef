@@ -21,6 +21,7 @@ declare(strict_types=1);
 
 namespace Core\Module\Admin\Controllers;
 
+use Core\Module\Admin\Services\AdminService;
 use Core\Module\Admin\Services\MenuAdminService;
 use Core\System\Http\Request;
 use Core\System\Http\Response;
@@ -45,7 +46,8 @@ class MenuController
     public function __construct(
         MenuAdminService $menuService,
         Template $template,
-        private SecurityManager $security
+        private SecurityManager $security,
+        private AdminService $adminService
     ) {
         $this->menuService = $menuService;
         $this->template = $template;
@@ -55,9 +57,10 @@ class MenuController
     {
         $html = $this->template->render('admin/menu/index', [
             'title'      => 'Меню сайта',
-            // CSRF-токен для fetch-запросов menu-editor.js (meta-тег + заголовок X-CSRF-Token)
+            // CSRF для layout админки: meta-тег (fetch/AJAX) и токен формы «Выйти»
             'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
-			'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'flash'      => $this->adminService->getFlash(),
             'menu_json'  => json_encode(
                 $this->menuService->getTreeForUi(),
                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES

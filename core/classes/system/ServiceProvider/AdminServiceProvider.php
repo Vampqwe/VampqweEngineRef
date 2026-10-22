@@ -146,7 +146,8 @@ class AdminServiceProvider extends ServiceProvider
         $menuController = static fn(): MenuController => new MenuController(
             $container->get(MenuAdminService::class),
             $container->get(Template::class),
-            $container->get(SecurityManager::class)
+            $container->get(SecurityManager::class),
+            $container->get(AdminService::class)
         );
 		$settingsController = static fn(): \Core\Module\Admin\Controllers\SettingsController => 
 			new \Core\Module\Admin\Controllers\SettingsController(
@@ -181,7 +182,8 @@ class AdminServiceProvider extends ServiceProvider
         // ─── Защищённые маршруты ───
         $admin = $router->group('/admin', new AdminMiddleware(
             $container->get(InstallService::class),
-            $container->get(SecurityManager::class)
+            $container->get(SecurityManager::class),
+            $container->get(AdminService::class)
         ));
 
         $admin->get('/', function (Request $request) use ($container): Response {
