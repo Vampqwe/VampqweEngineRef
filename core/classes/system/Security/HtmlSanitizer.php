@@ -97,6 +97,50 @@ class HtmlSanitizer
         );
     }
 
+    /**
+     * Sanitization for imported page content: dangerous elements are removed,
+     * but <style>/<script> tags and their text survive intact.
+     *
+     * Imported HTML must reach the database "as is" — styles/scripts live inside
+     * the content itself (rendered by Template::trustedHtml(), which nonces them
+     * for CSP). The regular purifier would delete these tags with their content
+     * (REMOVE_WITH_CONTENT), silently breaking imported pages.
+     */
+    public static function cleanPreserveAssets(string $html): string
+    {
+        if ($html === '') {
+            return '';
+        }
+
+        // 1. Protect <style>/<script> from DOM round-trip quirks (CDATA nodes,
+        //    entity decoding of selectors like a[href^="http://"]) via placeholders.
+        $placeholders = [];
+        $protected = preg_replace_callback(
+            '~<(style|script)\b[^>]*>.*?</\1\s*>~is',
+            static function (array $m) use (&$placeholders): string {
+                $key = 'SANITIZEPROTECTED' . count($placeholders) . 'X';
+                $placeholders[$key] = $m[0];
+                return '<!--' . $key . '-->';
+            },
+            $html
+        ) ?? $html;
+
+        // 2. Run the standard purification on the remaining markup.
+        $cfg = self::config();
+        $cleaned = self::purify(
+            $protected,
+            (array) ($cfg['allowed_tags'] ?? self::ALLOWED_TAGS),
+            self::allowedAttributes()
+        );
+
+        // 3. Restore protected tags verbatim.
+        foreach ($placeholders as $key => $tag) {
+            $cleaned = str_replace('<!--' . $key . '-->', $tag, $cleaned);
+        }
+
+        return $cleaned;
+    }
+
     public static function cleanStrict(string $html): string
     {
         // Совместимо со старым поведением: HTML.Allowed = 'p,br,strong,em,a[href|title]'
