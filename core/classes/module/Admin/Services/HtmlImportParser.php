@@ -686,15 +686,19 @@ class HtmlImportParser
             return [null, null];
         }
 
-        $tailOffset = $start['offset'];
-        $end = $this->findMarkerOffset(substr($html, $tailOffset), $block['end'] ?? null, 'end');
+        $tailOffset = $start;
+        // Поиск end-маркера стартует на 1 байт раньше конца start-маркера:
+        // литеральные паттерны '<...>' и '<!--...-->' допускают гибкие границы,
+        // и без отступа тот же самый start-маркер мог бы быть найден как end.
+        $searchFrom = max(0, $tailOffset - 1);
+        $end = $this->findMarkerOffset(substr($html, $searchFrom), $block['end'] ?? null, 'end');
 
-        return [$start['offset'], $end === null ? null : $tailOffset + $end['offset']];
+        return [$start, $end === null ? null : $searchFrom + $end];
     }
 
     /**
-     * Ищет одно вхождение маркера. Возвращает ['offset' => int, 'len' => int]
-     * (offset — позиция КОНЦА найденного маркера) или null.
+     * Ищет одно вхождение маркера. Возвращает смещение КОНЦА найденного
+     * маркера (int) или null.
      */
     private function findMarkerOffset(string $html, mixed $marker, string $side): ?int
     {
@@ -704,15 +708,32 @@ class HtmlImportParser
 
         $patterns = [];
         if (is_string($marker)) {
-            if (preg_match('~^([/~]).*\1[imsxuADSUJ]*$~s', $marker)) {
+            if ($this->looksLikePcre($marker)) {
                 // Готовая PCRE из конфига
                 $patterns[] = $marker;
             } else {
-                // Литеральный комментарий-маркер: <!-- ... --> (регистронезависимо, гибкие пробелы)
-                $inner = trim($marker);
-                $inner = preg_replace('~^<!--\s*|\s*-->$~', '', $inner);
-                $quoted = preg_quote((string) $inner, '~');
-                $patterns[] = '~<!--[<\s-]*\s*' . $quoted . '\s*[>\s-]*-->~iu';
+                // Литеральный маркер: комментарий <!-- ... --> или произвольный
+                // разделитель вида <---nav---> / <-- nav --> (регистронезависимо,
+                // гибкие пробелы между словами).
+                $raw = trim($marker);
+                $isComment = preg_match('~^<!--.*-->$~s', $raw) === 1;
+                if ($isComment) {
+                    // Комментарий: снимаете обрамление '<!--' ... '-->', внутри — имя маркера.
+                    $inner = trim((string) preg_replace('~^<!--\s*|\s*-->$~', '', $raw));
+                    // 'ОСНОВНОЙ КОНТЕНТ' и т.п.: одинарные пробелы → гибкие \s*
+                    $flexible = str_replace(' ', '\\s*', preg_quote($inner, '~'));
+                    $patterns[] = '~<!--[<\\s-]*\\s*' . $flexible . '\\s*[>\\s-]*-->~iu';
+                } else {
+                    // Произвольный литеральный разделитель: '<---nav--->', '<-- nav -->'.
+                    // Ядро = все буквы/цифры/подчёркивания маркера по порядку,
+                    // всё остальное (<, -, !, пробелы) — гибкое [<>\\s!-]*.
+                    $core = preg_quote((string) preg_replace('~[^A-Za-z0-9_]~u', '', $raw), '~');
+                    // Пробелы внутри ядра тоже делаем гибкими ('end nav' ~ 'END  NAV')
+                    $coreFlex = str_replace(' ', '\\s*', $core);
+                    $loose = '[<>\\s!-]*' . $coreFlex . '[<>\\s!-]*';
+                    $patterns[] = '~<' . $loose . '>~iu';
+                    $patterns[] = '~<!--' . $loose . '-->~iu';
+                }
             }
         } elseif (is_array($marker)) {
             foreach ($marker as $m) {
@@ -731,11 +752,38 @@ class HtmlImportParser
 
         foreach ($patterns as $p) {
             if (@preg_match($p, $html, $m, PREG_OFFSET_CAPTURE) === 1) {
-                return ['offset' => (int) $m[0][1] + strlen($m[0][0]), 'len' => strlen($m[0][0])];
+                return (int) $m[0][1] + strlen($m[0][0]);
             }
         }
 
         return null;
+    }
+
+    /**
+     * Эвристика: похожа ли строка конфига на готовое PCRE-выражение
+     * с одинаковым открывающим и закрывающим ограничителем в начале и конце.
+     */
+    private function looksLikePcre(string $s): bool
+    {
+        $s = trim($s);
+        if (strlen($s) < 3) {
+            return false;
+        }
+        // Только симметричные ASCII-ограничители без вложенных пар: /.../ ~...~ #...% !...!
+        foreach (['/', '~', '#', '%', '!'] as $d) {
+            if ($s[0] === $d && strpbrk(substr($s, 1), '/~#%!') !== false) {
+                // закрывающий ограничитель должен быть тем же символом
+                $closePos = strrpos($s, $d);
+                if ($closePos > 0) {
+                    $tail = substr($s, $closePos + 1);
+                    if ($tail === '' || preg_match('/^[imsxuADSUJn]+$/', $tail) === 1) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private function loadHtml(string $html): DOMDocument
