@@ -22,8 +22,6 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
-use Core\Module\File\File;
-use Core\Module\Directory\Directory;
 use DOMDocument;
 use DOMXPath;
 
@@ -237,6 +235,25 @@ class HtmlImportParser
     public function getRules(): array
     {
         return $this->rules;
+    }
+
+    /**
+     * Описания target ('table', 'mode', 'column', 'fields') активных блоков —
+     * для generic-записи в БД на этапе подтверждения импорта.
+     *
+     * @return array<string,array>
+     */
+    public function getBlockTargets(): array
+    {
+        $targets = [];
+        foreach ($this->getActiveBlocks() as $name => $block) {
+            $target = (array) ($block['target'] ?? []);
+            if ($target !== []) {
+                $targets[(string) $name] = $target;
+            }
+        }
+
+        return $targets;
     }
 
     /**
@@ -669,21 +686,6 @@ class HtmlImportParser
         return '';
     }
 
-    private function extractDescription(DOMXPath $xpath): string
-    {
-        $nodes = $xpath->query('//meta[@name="description"]/@content');
-        if ($nodes->length > 0) {
-            return trim($nodes->item(0)->textContent);
-        }
-
-        $og = $xpath->query('//meta[@property="og:description"]/@content');
-        if ($og->length > 0) {
-            return trim($og->item(0)->textContent);
-        }
-
-        return '';
-    }
-
     /**
      * Собирает CSS из тегов <style> в памяти (без записи на диск).
      */
@@ -807,210 +809,141 @@ class HtmlImportParser
     }
 
     /**
-     * Извлечь Schema.org JSON-LD из страницы
+     * Извлечь Schema.org JSON-LD из страницы.
+     *
+     * Перед записью схема нормализуется под текущий сайт:
+     *  - все поля "url" заменяются на APP_BASE_URL (хостинг из конфига);
+     *  - все поля "name" заменяются на APP_NAME;
+     *  - "dateModified" и "datePublished" устанавливаются в дату импорта.
      */
-/**
- * Извлечь Schema.org JSON-LD из страницы.
- *
- * Перед записью схема нормализуется под текущий сайт:
- *  - все поля "url" заменяются на APP_BASE_URL (хостинг из конфига);
- *  - все поля "name" заменяются на APP_NAME;
- *  - "dateModified" и "datePublished" устанавливаются в дату импорта.
- */
-private function extractSchema(DOMXPath $xpath): array
-{
-    $schemas = [];
-    $nodes = $xpath->query('//script[@type="application/ld+json"]');
-    $now = date('Y-m-d');
+    private function extractSchema(DOMXPath $xpath): array
+    {
+        $schemas = [];
+        $nodes = $xpath->query('//script[@type="application/ld+json"]');
+        $now = date('Y-m-d');
 
-    foreach ($nodes as $node) {
-        $json = trim($node->textContent);
-        if (empty($json)) {
-            continue;
-        }
+        foreach ($nodes as $node) {
+            $json = trim($node->textContent);
+            if (empty($json)) {
+                continue;
+            }
 
-        $data = json_decode($json, true);
-        // Валидная схема: объект с @type ИЛИ объект с @graph (несколько схем в одном скрипте)
-        $isValid = json_last_error() === JSON_ERROR_NONE
-            && is_array($data)
-            && (isset($data['@type']) || isset($data['@graph']));
-        if ($isValid) {
-            if (isset($data['@type'])) {
-                $type = is_array($data['@type']) ? implode(',', $data['@type']) : (string)$data['@type'];
-            } elseif (isset($data['@graph'])) {
-                $types = [];
-                foreach ((array)$data['@graph'] as $item) {
-                    if (isset($item['@type'])) {
-                        $types[] = is_array($item['@type']) ? implode(',', $item['@type']) : (string)$item['@type'];
+            $data = json_decode($json, true);
+            // Валидная схема: объект с @type ИЛИ объект с @graph (несколько схем в одном скрипте)
+            $isValid = json_last_error() === JSON_ERROR_NONE
+                && is_array($data)
+                && (isset($data['@type']) || isset($data['@graph']));
+            if ($isValid) {
+                if (isset($data['@type'])) {
+                    $type = is_array($data['@type']) ? implode(',', $data['@type']) : (string)$data['@type'];
+                } elseif (isset($data['@graph'])) {
+                    $types = [];
+                    foreach ((array)$data['@graph'] as $item) {
+                        if (isset($item['@type'])) {
+                            $types[] = is_array($item['@type']) ? implode(',', $item['@type']) : (string)$item['@type'];
+                        }
                     }
+                    $type = implode(',', array_unique($types)) ?: 'WebPage';
+                } else {
+                    $type = 'WebPage';
                 }
-                $type = implode(',', array_unique($types)) ?: 'WebPage';
+                $data = $this->normalizeSchemaUrls($data);
+                $data = $this->normalizeSchemaNames($data);
+                $data = $this->setSchemaDates($data, $now);
+                $schemas[] = [
+                    'schema_type' => $type,
+                    'data' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'priority' => 10, // Стандартный приоритет
+                ];
             } else {
-                $type = 'WebPage';
-            }
-            $data = $this->normalizeSchemaUrls($data);
-            $data = $this->normalizeSchemaNames($data);
-            $data = $this->setSchemaDates($data, $now);
-            $schemas[] = [
-                'schema_type' => $type,
-                'data' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                'priority' => 10, // Стандартный приоритет
-            ];
-        } else {
-            $this->warnings[] = 'Найден невалидный JSON в schema.org скрипте';
-        }
-    }
-
-    return $schemas;
-}
-
-/**
- * Рекурсивно установить dateModified / datePublished в дату импорта.
- * Если поле отсутствовало — оно добавляется к объекту схемы.
- */
-private function setSchemaDates(array $node, string $date): array
-{
-    $isObject = isset($node['@type']) || array_keys($node) !== range(0, count($node) - 1);
-    if ($isObject) {
-        $node['dateModified'] = $date;
-        $node['datePublished'] = $date;
-    }
-
-    foreach ($node as $key => $value) {
-        if (is_array($value)) {
-            $node[$key] = $this->setSchemaDates($value, $date);
-        }
-    }
-
-    return $node;
-}
-
-/**
- * Рекурсивно заменить строковые поля "name" на APP_NAME.
- * Правило: решение о замене принимается по СОБСТВЕННОМУ @type каждого
- * узла-объекта, а не наследуется от родителя. Вложенный объект без своего
- * @type (напр. {"provider":{"@type":"Organization",...}} внутри Service)
- * сохраняет свой тип и подлежит замене; white-list действует только на
- * узлы, которые сами имеют @type из NAME_KEEP_TYPES (ListItem, Service…).
- */
-private function normalizeSchemaNames(array $node): array
-{
-    $appName = trim((string)$this->config->get('APP_NAME', ''));
-    if ($appName === '') {
-        return $node;
-    }
-
-    // Определяем @type ТЕКУЩЕГО узла (строка или массив типов).
-    $keepName = false;
-    if (isset($node['@type'])) {
-        $types = array_map('strval', is_array($node['@type']) ? $node['@type'] : [$node['@type']]);
-        foreach ($types as $type) {
-            // Поддержка полностью квалифицированных IRIs вида https://schema.org/ListItem
-            $slashPos = strrpos($type, '/');
-            $short = $slashPos === false ? $type : substr($type, $slashPos + 1);
-            if (in_array($short, (array) ($this->rules['name_keep_types'] ?? []), true)) {
-                $keepName = true;
-                break;
+                $this->warnings[] = 'Найден невалидный JSON в schema.org скрипте';
             }
         }
+
+        return $schemas;
     }
-
-    foreach ($node as $key => $value) {
-        if (is_array($value)) {
-            $node[$key] = $this->normalizeSchemaNames($value);
-        } elseif ($key === 'name' && is_string($value) && !$keepName) {
-            $node[$key] = $appName;
-        }
-    }
-
-    return $node;
-}
-
-/**
- * Рекурсивно заменить все поля "url" на базовый URL сайта (APP_BASE_URL).
- */
-private function normalizeSchemaUrls(array $node): array
-{
-    $baseUrl = rtrim((string)$this->config->get('APP_BASE_URL', ''), '/');
-    if ($baseUrl === '') {
-        return $node;
-    }
-
-    foreach ($node as $key => $value) {
-        if (is_array($value)) {
-            $node[$key] = $this->normalizeSchemaUrls($value);
-        } elseif ($key === 'url') {
-            $node[$key] = $baseUrl . '/';
-        }
-    }
-
-    return $node;
-}
-
 
     /**
-     * Извлекает основной контент между маркерами «как есть».
-     *
-     * Надёжный способ: вырезаем исходный HTML по строковым позициям
-     * comment-узлов (регулярка по saveHTML), а затем парсим полученный
-     * фрагмент отдельным DOMDocument'ом. Так сохраняются все классы и
-     * inline-стили независимо от глубины залегания маркеров и «битости» разметки.
+     * Рекурсивно установить dateModified / datePublished в дату импорта.
+     * Если поле отсутствовало — оно добавляется к объекту схемы.
      */
-    private function extractContent(string $sourceHtml, DOMDocument $doc, DOMXPath $xpath): string
+    private function setSchemaDates(array $node, string $date): array
     {
-        // Ищем маркеры в ИСХОДНОМ HTML: в saveHTML() кириллические комментарии
-        // сериализуются как numeric character references и не найдутся бы регуляркой.
-        [$startPos, $endPos] = $this->findMarkerPositions($sourceHtml);
-
-        if ($startPos === null) {
-            // Fallback: старый поузловой обход нормализованного DOM
-            return $this->extractContentByNodes($doc, $xpath);
+        $isObject = isset($node['@type']) || array_keys($node) !== range(0, count($node) - 1);
+        if ($isObject) {
+            $node['dateModified'] = $date;
+            $node['datePublished'] = $date;
         }
 
-        if ($endPos === null) {
-            $this->warnings[] = 'Маркер <!-- FOOTER --> не найден, берём до конца документа';
-        }
-
-        // Вырезаем raw-подстроку между маркерами — ничего не переформатируется
-        $rawFragment = $endPos === null
-            ? substr($sourceHtml, $startPos)
-            : substr($sourceHtml, $startPos, $endPos - $startPos);
-
-        // Отбрасываем закрывающие теги контейнеров, если они попали в начало среза
-        $rawFragment = preg_replace('~^\s*</(main|div|section|article|body|html)\s*>~iu', '', $rawFragment, 1) ?? $rawFragment;
-
-        // Если FOOTER-маркер не найден — обрезаем хвост перед <footer>
-        if ($endPos === null) {
-            $footerPos = stripos($rawFragment, '<footer');
-            if ($footerPos !== false) {
-                $rawFragment = substr($rawFragment, 0, $footerPos);
+        foreach ($node as $key => $value) {
+            if (is_array($value)) {
+                $node[$key] = $this->setSchemaDates($value, $date);
             }
         }
 
-        // Парсим фрагмент отдельным документом (нормализация «битого» HTML + гарантия корректности)
-        $fragDoc = new DOMDocument();
-        libxml_use_internal_errors(true);
-        $fragDoc->loadHTML(
-            '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head><body>'
-                . $rawFragment . '</body></html>',
-            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
-        );
-        libxml_clear_errors();
+        return $node;
+    }
 
-        // <style>, стоящие внутри контента, тоже уносятся в neutral-style.css
-        $fragXp = new DOMXPath($fragDoc);
-        $this->collectStyles($fragXp);
-        $this->removeStyleTags($fragDoc, $fragXp);
+    /**
+     * Рекурсивно заменить строковые поля "name" на APP_NAME.
+     * Правило: решение о замене принимается по СОБСТВЕННОМУ @type каждого
+     * узла-объекта, а не наследуется от родителя. Вложенный объект без своего
+     * @type (напр. {"provider":{"@type":"Organization",...}} внутри Service)
+     * сохраняет свой тип и подлежит замене; white-list действует только на
+     * узлы, которые сами имеют @type из NAME_KEEP_TYPES (ListItem, Service…).
+     */
+    private function normalizeSchemaNames(array $node): array
+    {
+        $appName = trim((string)$this->config->get('APP_NAME', ''));
+        if ($appName === '') {
+            return $node;
+        }
 
-        // Сохраняем ТОЛЬКО содержимое <body> — иначе в контент вместе с обёрткой
-        // попадает служебный <!DOCTYPE html><html><head><meta ...></head><body> ... </body></html>,
-        // который мы сами добавили для корректной обработки кодировки.
-        $html = $this->extractInnerBody($fragDoc);
+        // Определяем @type ТЕКУЩЕГО узла (строка или массив типов).
+        $keepName = false;
+        if (isset($node['@type'])) {
+            $types = array_map('strval', is_array($node['@type']) ? $node['@type'] : [$node['@type']]);
+            foreach ($types as $type) {
+                // Поддержка полностью квалифицированных IRIs вида https://schema.org/ListItem
+                $slashPos = strrpos($type, '/');
+                $short = $slashPos === false ? $type : substr($type, $slashPos + 1);
+                if (in_array($short, (array) ($this->rules['name_keep_types'] ?? []), true)) {
+                    $keepName = true;
+                    break;
+                }
+            }
+        }
 
-        // Контроль целостности: текст результата должен совпадать с текстом raw-среза
-        $this->verifyContentIntegrity($html, $rawFragment);
+        foreach ($node as $key => $value) {
+            if (is_array($value)) {
+                $node[$key] = $this->normalizeSchemaNames($value);
+            } elseif ($key === 'name' && is_string($value) && !$keepName) {
+                $node[$key] = $appName;
+            }
+        }
 
-        return $html;
+        return $node;
+    }
+
+    /**
+     * Рекурсивно заменить все поля "url" на базовый URL сайта (APP_BASE_URL).
+     */
+    private function normalizeSchemaUrls(array $node): array
+    {
+        $baseUrl = rtrim((string)$this->config->get('APP_BASE_URL', ''), '/');
+        if ($baseUrl === '') {
+            return $node;
+        }
+
+        foreach ($node as $key => $value) {
+            if (is_array($value)) {
+                $node[$key] = $this->normalizeSchemaUrls($value);
+            } elseif ($key === 'url') {
+                $node[$key] = $baseUrl . '/';
+            }
+        }
+
+        return $node;
     }
 
     /**
@@ -1069,30 +1002,6 @@ private function normalizeSchemaUrls(array $node): array
         return $content;
     }
 
-    /**
-     * Находит строковые позиции маркеров в сериализованном HTML.
-     * Возвращает [start, end]: start — позиция сразу после "-->" открывающего
-     * маркера, end — позиция начала "<!--" закрывающего маркера (null, если нет).
-     */
-    private function findMarkerPositions(string $html): array
-    {
-        $start = null;
-        $end   = null;
-
-        if (preg_match('/<!--\s*ОСНОВНОЙ\s+КОНТЕНТ\s*-->/iu', $html, $m, PREG_OFFSET_CAPTURE)) {
-            $start = $m[0][1] + strlen($m[0][0]);
-        } else {
-            $this->warnings[] = 'Маркер <!-- ОСНОВНОЙ КОНТЕНТ --> не найден';
-            return [null, null];
-        }
-
-        $tail = substr($html, $start);
-        if (preg_match('/<!--\s*(?:PAGE\s+)?FOOTER\s*-->/iu', $tail, $m2, PREG_OFFSET_CAPTURE)) {
-            $end = $start + $m2[0][1];
-        }
-
-        return [$start, $end];
-    }
 
     /**
      * Проверка целостности: текстовое содержимое извлечённого HTML
@@ -1117,49 +1026,6 @@ private function normalizeSchemaUrls(array $node): array
         return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     }
 
-    /**
-     * Fallback: поузловой обход сиблингов между комментариями (старый алгоритм).
-     */
-    private function extractContentByNodes(DOMDocument $doc, DOMXPath $xpath): string
-    {
-        $commentNodes = $xpath->query('//comment()');
-
-        if ($commentNodes->length === 0) {
-            $this->warnings[] = 'Маркеры не найдены';
-            return '';
-        }
-
-        $startNode = null;
-        $endNode = null;
-
-        foreach ($commentNodes as $comment) {
-            $text = mb_strtoupper(trim($comment->textContent), 'UTF-8');
-
-            if ($startNode === null && str_contains($text, 'ОСНОВНОЙ')) {
-                $startNode = $comment;
-                continue;
-            }
-
-            if ($startNode !== null && str_contains($text, 'FOOTER')) {
-                $endNode = $comment;
-                break;
-            }
-        }
-
-        if ($startNode === null) {
-            return '';
-        }
-
-        $html = '';
-        $current = $startNode->nextSibling;
-
-        while ($current !== null && $current !== $endNode) {
-            $html .= $doc->saveHTML($current);
-            $current = $current->nextSibling;
-        }
-
-        return $html;
-    }
     private function downloadAndReplaceImages(string $html): string
     {
         if (preg_match_all('/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $html, $matches) === 0) {
