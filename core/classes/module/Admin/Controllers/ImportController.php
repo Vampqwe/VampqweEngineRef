@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Controllers;
 
 use Core\Module\Admin\Services\HtmlImportParser;
+use Core\Module\Admin\Services\ImportService;
 use Core\Module\Page\PageService;
 use Core\Module\Admin\Services\AdminService;
 use Core\System\Config\Config;
@@ -51,7 +52,8 @@ class ImportController
         Template $template,
         Config $config,
         private SecurityManager $security,
-        ?SessionManager $session = null
+        ?SessionManager $session = null,
+        private ?ImportService $importService = null
     ) {
         $this->parser = $parser;
         $this->pageService = $pageService;
@@ -129,6 +131,15 @@ class ImportController
 
         $exists = $this->pageService->pageExistsBySlug($parsed['slug']);
 
+        // Детальный отчёт по блокам для предпросмотра: plain-текст каждого
+        // блока из исходного HTML (без скачивания картинок/записи стилей).
+        $blockTexts = [];
+        try {
+            $blockTexts = $this->parser->blocksPlainText($html);
+        } catch (\Throwable) {
+            // отчёт не критичен для импорта
+        }
+
         $this->session->set(self::PREVIEW_KEY, $parsed);
 
         $html = $this->template->render('admin/import/preview', [
@@ -136,6 +147,7 @@ class ImportController
             'parsed' => $parsed,
             'existing' => $exists,
             'blocks_config' => $this->parser->getActiveBlocks(),
+            'block_texts' => $blockTexts,
             'flash' => $this->adminService->getFlash(),
             'csrf_token' => $this->security->getCsrfToken()->getToken(),
             'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
@@ -195,22 +207,23 @@ class ImportController
         ];
 
         // Конфигурируемые блоки из config/import-parser.php ('blocks'):
-        // дополнительные колонки целевой таблицы (кроме служебных полей выше).
-        // Значения идут только через подготовленные запросы PageService; имена
-        // колонок предварительно валидированы парсером ([A-Za-z0-9_]+).
+        // колоночные target'ы таблицы pages — дополнительные поля записи
+        // (title/description/content/scripts и т.п.). Значения идут только
+        // через подготовленные запросы PageService; имена колонок
+        // предварительно валидированы парсером ([A-Za-z_][A-Za-z0-9_]*).
         $selfFields = array_fill_keys(array_keys($data), true);
         $extraColumns = [];
         foreach ($this->parser->getActiveBlocks() as $name => $block) {
             $target = (array) ($block['target'] ?? []);
             $mode = (string) ($target['mode'] ?? 'column');
             if ($mode === 'rows') {
-                continue; // строковые наборы обрабатываются отдельно (ниже)
+                continue; // строковые наборы пишут ImportService (ниже)
             }
             $table = (string) ($target['table'] ?? 'pages');
             $column = (string) ($target['column'] ?? '');
-            // Разрешаем дополнительные колонки только колоночных профилей pages:
+            // Разрешаем дополнительные колонки только целевой таблицы pages:
             // createPage() принимает фиксированный набор полей этой таблицы.
-            if ($table !== 'pages' || $column === '' || !isset($selfFields[$column])) {
+            if ($table !== 'pages' || $column === '' || isset($selfFields[$column])) {
                 continue;
             }
             $value = $parsed['values'][$column] ?? null;
@@ -230,8 +243,47 @@ class ImportController
 
         $id = $this->pageService->createPage($data);
 
-        // СОХРАНЯЕМ SCHEMA.ORG РАЗМЕТКУ (привязка к странице согласно архитектуре БД)
-        if (!empty($parsed['schemas'])) {
+        // Generic-запись блоков mode='rows' в произвольные таблицы
+        // (schema_org, menu_items и любые другие из config/import-parser.php).
+        // Schema.org сохраняется тем же путём: его rows-набор содержит
+        // те же schema_type/data/priority, что и прежний addSchemaForPage().
+        $rowReports = [];
+        if ($this->importService !== null) {
+            $targets = $this->parser->getBlockTargets();
+            foreach ((array) ($parsed['row_sets'] ?? []) as $table => $rows) {
+                if ($rows === [] || !is_array($rows)) {
+                    continue;
+                }
+                $fields = null;
+                foreach ($targets as $target) {
+                    if (($target['mode'] ?? 'column') === 'rows'
+                        && (string) ($target['table'] ?? '') === (string) $table) {
+                        $fields = (array) ($target['fields'] ?? []);
+                        break;
+                    }
+                }
+                if ($fields === null || $fields === []) {
+                    $this->adminService->setFlash(
+                        'warning',
+                        "Блоки для таблицы «{$table}» не описаны в конфиге — пропущено " . count($rows) . ' строк'
+                    );
+                    continue;
+                }
+
+                $context = ['page_id' => $id];
+                try {
+                    $report = $this->importService->writeRows((string) $table, $rows, $fields, $context);
+                } catch (\Throwable $e) {
+                    $report = ['inserted' => 0, 'skipped' => count($rows), 'errors' => [$e->getMessage()]];
+                }
+                $rowReports[(string) $table] = $report;
+
+                foreach ($report['errors'] as $err) {
+                    $this->adminService->setFlash('warning', (string) $err);
+                }
+            }
+        } elseif (!empty($parsed['schemas'])) {
+            // Резервный путь без ImportService — прежнее поведение
             $this->pageService->addSchemaForPage($id, $parsed['schemas']);
         }
 
