@@ -64,10 +64,28 @@ class CsrfMiddleware implements Middleware
                     'error',
                     'Защита от подделки запроса: токен отсутствует или устарел. Повторите действие.'
                 );
-                return Response::redirect('/admin');
+                return Response::redirect($this->safeReferer((string) $request->getReferer()));
             }
         }
 
         return $next($request);
+    }
+
+    /**
+     * Куда возвращать пользователя после CSRF-ошибки: только на внутренний
+     * GET-адрес из Referer (белый список префикса /admin), иначе — на дашборд.
+     * Это сохраняет flash-сообщение на той странице, откуда был отправлен
+     * запрос, и исключает redirect open-redirect по внешнему Referer.
+     */
+    private function safeReferer(string $referer): string
+    {
+        if ($referer !== '') {
+            $path = parse_url($referer, PHP_URL_PATH);
+            if (is_string($path) && str_starts_with($path, '/admin')) {
+                return $path;
+            }
+        }
+
+        return '/admin';
     }
 }

@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Services;
 
 use Core\System\DataBase\DataBase;
+use Core\System\Session\SessionManager;
 
 class AdminService
 {
@@ -36,12 +37,12 @@ class AdminService
     private DataBase $db;
 
     /** Единая точка доступа к сессии (flash-сообщения и пр.) */
-    private \Core\System\Session\SessionManager $session;
+    private SessionManager $session;
 
-    public function __construct(DataBase $db, ?\Core\System\Session\SessionManager $session = null)
+    public function __construct(DataBase $db, ?SessionManager $session = null)
     {
         $this->db = $db;
-        $this->session = $session ?? new \Core\System\Session\SessionManager();
+        $this->session = $session ?? new SessionManager();
         $this->limits = $this->loadLimits();
     }
 
