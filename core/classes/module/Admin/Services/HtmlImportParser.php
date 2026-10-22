@@ -472,6 +472,89 @@ class HtmlImportParser
         return $result;
     }
 
+    /**
+     * Публичное извлечение текста блока по XPath (для детального отчёта
+     * предпросмотра в админке — сравнение с исходным HTML).
+     *
+     * @return array<string,string> имя блока => plain-текст ('' если не найден)
+     */
+    public function blocksPlainText(string $html): array
+    {
+        $doc = $this->loadHtml($html);
+        $xpath = new DOMXPath($doc);
+
+        $result = [];
+        foreach ($this->getActiveBlocks() as $name => $block) {
+            $type = (string) ($block['type'] ?? '');
+            $text = '';
+            switch ($type) {
+                case 'title':
+                    $text = $this->extractTitle($xpath);
+                    break;
+                case 'meta':
+                    $text = $this->extractMetaByBlock($xpath, $block);
+                    break;
+                case 'marker':
+                case 'xpath':
+                    [$value] = $this->extractBlockValueForReport((string) $name, $block, $html, $doc, $xpath);
+                    $text = is_string($value) ? $this->plainText($value) : '';
+                    break;
+            }
+            $result[(string) $name] = $text;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Значение блока только для отчёта (без скачивания картинок и записи стилей).
+     *
+     * @return array{0:mixed, 1:bool} [value, found]
+     */
+    private function extractBlockValueForReport(string $name, array $block, string $sourceHtml, DOMDocument $doc, DOMXPath $xpath): array
+    {
+        $type = (string) ($block['type'] ?? 'marker');
+
+        if ($type === 'xpath') {
+            $expr = (string) ($block['expression'] ?? '');
+            $nodes = $expr !== '' ? @$xpath->query($expr) : false;
+            $html = '';
+            if ($nodes !== false) {
+                foreach ($nodes as $node) {
+                    foreach ($node->childNodes as $child) {
+                        $html .= $doc->saveHTML($child);
+                    }
+                }
+            }
+            return [$html, trim($html) !== ''];
+        }
+
+        // marker (и прочие типы здесь не нужны)
+        [$startPos, $endPos] = $this->findMarkerPositionsForBlock($sourceHtml, $block, $name);
+        if ($startPos !== null) {
+            $raw = $endPos === null
+                ? substr($sourceHtml, $startPos)
+                : substr($sourceHtml, $startPos, $endPos - $startPos);
+            return [$raw, trim($raw) !== ''];
+        }
+
+        if (!empty($block['fallback_xpath'])) {
+            $expr = (string) $block['fallback_xpath'];
+            $nodes = @$xpath->query($expr);
+            if ($nodes !== false && $nodes->length > 0) {
+                $html = '';
+                foreach ($nodes as $node) {
+                    foreach ($node->childNodes as $child) {
+                        $html .= $doc->saveHTML($child);
+                    }
+                }
+                return [$html, trim($html) !== ''];
+            }
+        }
+
+        return [null, false];
+    }
+
     private function applyTransform(string $value, string $transform): string
     {
         return match ($transform) {
