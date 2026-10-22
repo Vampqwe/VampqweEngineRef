@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} — линт, стиль, юнит-тесты
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, libxml, json, filter
+          coverage: none
+          ini-values: error_reporting=E_ALL
+
+      - name: Validate composer.json and composer.lock
+        run: composer validate --strict
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Lint all PHP files (syntax gate)
+        run: |
+          status=0
+          while IFS= read -r -d '' f; do
+            php -l "$f" > /dev/null || status=1
+          done < <(find core index.php router.php -name '*.php' -print0)
+          exit $status
+
+      - name: Style gate (no tabs, no trailing whitespace in core)
+        run: |
+          if grep -rnP '^[[:space:]]*\t' --include='*.php' core; then
+            echo "::error::Найдены табы в индентации (см. выше)"; exit 1
+          fi
+          if grep -rnP '[ \t]+$' --include='*.php' core; then
+            echo "::error::Найдены хвостовые пробелы (см. выше)"; exit 1
+          fi
+
+      - name: Security gate — секреты не должны попадать в git
+        run: |
+          if [ -f config.env ]; then
+            echo "::error::config.env не должен существовать в репозитории CI"; exit 1
+          fi
+          if git ls-files | grep -E '(^|/)config\.env$|storage/backups/|^logs/|\.log$'; then
+            echo "::error::В индекс git попали секретные/лог файлы"; exit 1
+          fi
+
+      - name: Unit tests (PHPUnit)
+        run: vendor/bin/phpunit --testsuite unit
+
+      - name: Smoke — автозагрузка всех классов core
+        run: |
+          php -r '
+            require "vendor/autoload.php";
+            $missing = 0;
+            foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator("core/classes")) as $f) {
+                if ($f->getExtension() !== "php") continue;
+                $src = file_get_contents($f->getPathname());
+                if (!preg_match("/^namespace\s+([^;]+);/m", $src, $ns)) continue;
+                if (!preg_match("/\b(?:final\s+|abstract\s+)?class\s+(\w+)/", $src, $cl)) continue;
+                $fqcn = trim($ns[1]) . "\\" . $cl[1];
+                if (!class_exists($fqcn)) { echo "MISSING: $fqcn\n"; $missing++; }
+            }
+            if ($missing > 0) { fwrite(STDERR, "Autoload broken for $missing classes\n"); exit(1); }
+            echo "Autoload OK\n";
+          '
