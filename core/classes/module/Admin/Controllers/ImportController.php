@@ -87,6 +87,7 @@ class ImportController
             'title' => 'Импорт страниц',
             'flash' => $flash,
             'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
         ]);
 
         return Response::html($html);
@@ -136,6 +137,7 @@ class ImportController
             'existing' => $exists,
             'flash' => $this->adminService->getFlash(),
             'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
         ]);
 
         return Response::html($html);
