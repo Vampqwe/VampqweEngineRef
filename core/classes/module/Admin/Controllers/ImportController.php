@@ -135,6 +135,7 @@ class ImportController
             'title' => 'Предпросмотр импорта',
             'parsed' => $parsed,
             'existing' => $exists,
+            'blocks_config' => $this->parser->getActiveBlocks(),
             'flash' => $this->adminService->getFlash(),
             'csrf_token' => $this->security->getCsrfToken()->getToken(),
             'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
@@ -192,6 +193,40 @@ class ImportController
             'og_description' => $parsed['description'],
             'scripts' => json_encode(array_values($scripts), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         ];
+
+        // Конфигурируемые блоки из config/import-parser.php ('blocks'):
+        // дополнительные колонки целевой таблицы (кроме служебных полей выше).
+        // Значения идут только через подготовленные запросы PageService; имена
+        // колонок предварительно валидированы парсером ([A-Za-z0-9_]+).
+        $selfFields = array_fill_keys(array_keys($data), true);
+        $extraColumns = [];
+        foreach ($this->parser->getActiveBlocks() as $name => $block) {
+            $target = (array) ($block['target'] ?? []);
+            $mode = (string) ($target['mode'] ?? 'column');
+            if ($mode === 'rows') {
+                continue; // строковые наборы обрабатываются отдельно (ниже)
+            }
+            $table = (string) ($target['table'] ?? 'pages');
+            $column = (string) ($target['column'] ?? '');
+            // Разрешаем дополнительные колонки только колоночных профилей pages:
+            // createPage() принимает фиксированный набор полей этой таблицы.
+            if ($table !== 'pages' || $column === '' || !isset($selfFields[$column])) {
+                continue;
+            }
+            $value = $parsed['values'][$column] ?? null;
+            if ($value === null || $value === '') {
+                continue;
+            }
+            if ($column === 'content') {
+                $value = $this->sanitizeImportedContent($this->parser->stripDocumentWrapper((string) $value));
+            } elseif (!is_string($value)) {
+                $value = (string) $value;
+            }
+            $extraColumns[$column] = $value;
+        }
+        if ($extraColumns !== []) {
+            $data = array_merge($data, $extraColumns);
+        }
 
         $id = $this->pageService->createPage($data);
 
