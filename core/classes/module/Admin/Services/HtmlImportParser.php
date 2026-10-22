@@ -686,28 +686,13 @@ class HtmlImportParser
             return [null, null];
         }
 
+        // Поиск end ведём строго ПОСЛЕ конца start-маркера: повторное совпадение
+        // с самим start невозможно в силу позиции, а содержимое блока между
+        // маркерами легитимно и токен-проверке не подлежит (иначе имя start
+        // «nav» ложно блокировало бы корректный end «end nav»).
         $tailOffset = $start;
 
-        // Токены start-маркера (ядро без не-буквенных символов, нижний регистр),
-        // которые запрещено принимать за end-маркер.
-        $forbidden = $this->markerTokens($block['start'] ?? null);
-
-        // Гибкие литеральные паттерны допускают лишние символы на границах,
-        // поэтому найденный end может «зацепить» хвост start-маркера (префикс).
-        // Сдвигаем точку поиска до конца самого длинного зацепленного префикса.
-        if ($forbidden !== []) {
-            $head = strtolower((string) substr($html, max(0, $tailOffset - 16), 16));
-            foreach ($forbidden as $token) {
-                for ($len = min(16, strlen($token)); $len >= 1; $len--) {
-                    if (str_ends_with($head, substr($token, 0, $len))) {
-                        $tailOffset += $len;
-                        break;
-                    }
-                }
-            }
-        }
-
-        $end = $this->findMarkerOffset(substr($html, $tailOffset), $block['end'] ?? null, 'end', $forbidden);
+        $end = $this->findMarkerOffset(substr($html, $tailOffset), $block['end'] ?? null, 'end');
 
         return [$start, $end === null ? null : $tailOffset + $end];
     }
@@ -818,10 +803,16 @@ class HtmlImportParser
             // (или его вариацией из псевдонимов) — такие совпадения пропускаем.
             $offset = 0;
             while (@preg_match($p, $html, $m, PREG_OFFSET_CAPTURE, $offset) === 1) {
-                $matchEnd = (int) $m[0][1] + strlen($m[0][0]);
-                if ($forbidden !== null && $this->isForbiddenMatch(substr($html, 0, (int) $m[0][1]), $forbidden)) {
-                    // Совпадение относится к другому маркеру — пропускаем его ищем дальше.
-                    $offset = max((int) $m[0][1] + 1, $offset + 1);
+                $matchStart = (int) $m[0][1];
+                $matchEnd = $matchStart + strlen($m[0][0]);
+                // Защита проверяет только промежуток МЕЖДУ позицией поиска и
+                // совпадением: если там есть буквы другого (запрещённого) ядра,
+                // совпадение относится к иному маркеру — пропускаем ищем дальше.
+                // Важно: не весь префикс строки — иначе собственное имя
+                // start-маркера («nav») ложно блокирует корректный end («end nav»).
+                if ($forbidden !== null
+                    && $this->isForbiddenMatch(substr($html, $offset, $matchStart - $offset), $forbidden)) {
+                    $offset = max($matchStart + 1, $offset + 1);
                     continue;
                 }
 
