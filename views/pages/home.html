@@ -1,0 +1,36 @@
+@extends('layouts/main')
+
+@section('title'){{ trim(page.title) }}@endsection
+
+@section('description'){{ trim(page.description) }}@endsection
+
+@section('keywords'){{ trim(page.keywords ?? '') }}@endsection
+
+@section('robots'){{ trim(page.meta_robots) }}@endsection
+
+@section('canonical'){{ trim(canonical_url) }}@endsection
+
+@section('og_title'){{ trim(page.og_title) }}@endsection
+
+@section('og_description'){{ trim(page.og_description) }}@endsection
+
+@section('og_image_tag')
+    @if(!empty(page.og_image))
+        <meta property="og:image" content="{{ og_image_url }}">
+    @endif
+@endsection
+
+@section('schema_scripts')
+    @foreach(page.schema_org as $schema)
+        {!! $template->schemaJson($schema) !!}
+    @endforeach
+@endsection
+
+@section('content')
+    {{-- Контент главной страницы из БД --}}
+    {!! $template->trustedHtml(page.content) !!}
+@endsection
+
+@section('scripts')
+    {!! $template->scripts(page.scripts) !!}
+@endsection

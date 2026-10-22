@@ -1,0 +1,95 @@
+@extends('admin/layouts/admin')
+
+@section('page_title')
+Управление Schema.org
+@endsection
+
+@section('page_subtitle')
+Глобальные и привязанные к страницам разметки
+@endsection
+
+@section('content')
+<div class="header-actions" style="margin-bottom: 1.5rem;">
+    <a href="/admin/schema/new" class="btn btn-primary">➕ Добавить схему</a>
+    <a href="/admin/pages" class="btn btn-secondary">← К страницам</a>
+</div>
+
+@if(!empty(flash.error))
+    <div class="flash-message flash-error">{{ flash.error }}</div>
+@endif
+@if(!empty(flash.success))
+    <div class="flash-message flash-success">{{ flash.success }}</div>
+@endif
+
+<div class="card">
+    <div class="card-body" style="padding: 0;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Тип схемы</th>
+                    <th>Привязка</th>
+                    <th>Приоритет</th>
+                    <th>Статус</th>
+                    <th style="width: 150px;">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach(schemas as schema)
+                <tr>
+                    <td>
+                        <span class="badge badge-info" style="background: var(--teal-dark); color: var(--teal-light);">
+                            {{ schema.schema_type }}
+                        </span>
+                    </td>
+                    <td>
+                        @if(schema.page_id)
+                            📄 <a href="/admin/pages/{{ schema.page_id }}/edit" style="color: var(--teal-light);">
+                                {{ schema.page_title }} #{{ schema.page_id }}
+                            </a>
+                        @elseif(schema.route)
+                            🌐 Маршрут: <code>{{ schema.route }}</code>
+                        @else
+                            🌍 Глобальная (везде)
+                        @endif
+                    </td>
+                    <td>{{ schema.priority }}</td>
+                    <td>
+                        @if(schema.is_active)
+                            <span class="badge badge-success">Активна</span>
+                        @else
+                            <span class="badge badge-warning">Отключена</span>
+                        @endif
+                    </td>
+                    <td class="action-buttons">
+                        <a href="/admin/schema/{{ schema.id }}/edit" class="btn btn-sm btn-secondary">✏️</a>
+                        <form method="POST" action="/admin/schema/{{ schema.id }}/delete" style="display:inline;" onsubmit="return confirm('Удалить эту схему?');">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+                @endforeach
+                @if(empty(schemas))
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 2rem; color: var(--silver);">
+                        Схемы пока не добавлены.
+                    </td>
+                </tr>
+                @endif
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if(pagination.totalPages > 1)
+<div class="pagination">
+    @if(pagination.page > 1)
+        <a href="?page={{ pagination.page - 1 }}" class="btn btn-sm btn-secondary">← Назад</a>
+    @endif
+    <span>Страница {{ pagination.page }} из {{ pagination.totalPages }}</span>
+    @if(pagination.page < pagination.totalPages)
+        <a href="?page={{ pagination.page + 1 }}" class="btn btn-sm btn-secondary">Вперёд →</a>
+    @endif
+</div>
+@endif
+@endsection

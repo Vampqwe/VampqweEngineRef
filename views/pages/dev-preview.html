@@ -1,0 +1,385 @@
+@extends('layouts/main')
+
+@section('title') Локальная диагностика · {{ app_name }} @endsection
+@section('description') Диагностическая панель локальной среды @endsection
+@section('robots') noindex, nofollow, noarchive @endsection
+@section('canonical') {{ base_url }}/__dev/preview @endsection
+
+@section('head')
+<style nonce="{{ $template->getCspNonce() }}">
+    .preview {
+        --preview-ink: #20322f;
+        --preview-muted: #64716b;
+        --preview-line: #dce3dc;
+        --preview-paper: #fffefa;
+        --preview-green: #315c4c;
+        --preview-green-soft: #e8f0e9;
+        --preview-red: #a53d31;
+        --preview-red-soft: #fae9e5;
+        --preview-gold: #936719;
+        --preview-gold-soft: #f7f0df;
+        color: var(--preview-ink);
+        padding: 8px 0 56px;
+    }
+
+    .preview * { box-sizing: border-box; }
+    .preview button, .preview input { font: inherit; }
+    .preview a { color: inherit; }
+
+    .preview-inner {
+        width: min(1100px, calc(100% - 40px));
+        margin: 0 auto;
+    }
+
+    .preview-topline {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 0 18px;
+        border-bottom: 1px solid var(--preview-line);
+        color: var(--preview-muted);
+        font: 600 11px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+        text-transform: uppercase;
+    }
+
+    .preview-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .preview-status::before {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4b8b65;
+        content: "";
+    }
+
+    .preview-topline a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+    .preview-heading {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end;
+        gap: 24px;
+        padding: 34px 0 26px;
+    }
+
+    .preview-eyebrow {
+        margin: 0 0 9px;
+        color: var(--preview-green);
+        font: 700 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+        text-transform: uppercase;
+    }
+
+    .preview-heading h1 {
+        margin: 0;
+        font: 500 clamp(34px, 5vw, 58px)/1.02 Georgia, "Times New Roman", serif;
+    }
+
+    .preview-lede {
+        max-width: 610px;
+        margin: 14px 0 0;
+        color: var(--preview-muted);
+        font-size: 15px;
+        line-height: 1.6;
+    }
+
+    .preview-build {
+        min-width: 130px;
+        padding: 13px 15px;
+        border-left: 2px solid var(--preview-green);
+        background: var(--preview-green-soft);
+        color: var(--preview-green);
+        font: 600 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .preview-build span { display: block; color: var(--preview-muted); font-weight: 400; }
+
+    .preview-workbench {
+        display: grid;
+        grid-template-columns: minmax(0, 1.65fr) minmax(250px, .75fr);
+        border-top: 1px solid var(--preview-line);
+        border-bottom: 1px solid var(--preview-line);
+    }
+
+    .preview-checks { padding: 21px 26px 24px 0; }
+
+    .preview-aside {
+        padding: 23px 0 24px 25px;
+        border-left: 1px solid var(--preview-line);
+    }
+
+    .preview-section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 14px;
+        margin-bottom: 15px;
+    }
+
+    .preview-section-head h2, .preview-aside h2 {
+        margin: 0;
+        font: 600 17px/1.25 Georgia, "Times New Roman", serif;
+    }
+
+    .preview-count {
+        color: var(--preview-muted);
+        font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .preview-list { display: grid; }
+
+    .preview-check {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 13px;
+        min-height: 70px;
+        padding: 12px 2px;
+        border-top: 1px solid var(--preview-line);
+        cursor: pointer;
+    }
+
+    .preview-check input {
+        width: 17px;
+        height: 17px;
+        margin: 0;
+        accent-color: var(--preview-green);
+    }
+
+    .preview-check-copy { min-width: 0; }
+    .preview-check-title { display: block; font-size: 14px; font-weight: 650; }
+    .preview-check-description { display: block; margin-top: 4px; color: var(--preview-muted); font-size: 12px; line-height: 1.4; }
+
+    .preview-result {
+        max-width: 155px;
+        color: var(--preview-muted);
+        font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+        text-align: right;
+    }
+
+    .preview-result[data-state="passed"] { color: var(--preview-green); }
+    .preview-result[data-state="failed"] { color: var(--preview-red); }
+    .preview-result[data-state="running"] { color: var(--preview-gold); }
+
+    .preview-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        padding-top: 17px;
+    }
+
+    .preview-button {
+        min-height: 42px;
+        padding: 0 16px;
+        border: 1px solid var(--preview-green);
+        background: var(--preview-green);
+        color: white;
+        font-size: 13px;
+        font-weight: 650;
+        cursor: pointer;
+    }
+
+    .preview-button:hover { background: #264b3d; }
+    .preview-button:disabled { opacity: .55; cursor: wait; }
+
+    .preview-button-secondary {
+        border-color: var(--preview-line);
+        background: transparent;
+        color: var(--preview-ink);
+    }
+
+    .preview-button-secondary:hover { background: var(--preview-paper); }
+
+    .preview-run-state {
+        min-height: 20px;
+        margin: 10px 0 0;
+        color: var(--preview-muted);
+        font-size: 12px;
+    }
+
+    .preview-run-state[data-state="failed"] { color: var(--preview-red); }
+    .preview-run-state[data-state="passed"] { color: var(--preview-green); }
+
+    .preview-aside h2 { margin-bottom: 14px; }
+
+    .preview-aside-block {
+        padding: 13px 0;
+        border-top: 1px solid var(--preview-line);
+    }
+
+    .preview-aside-label {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--preview-muted);
+        font: 600 10px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+        text-transform: uppercase;
+    }
+
+    .preview-aside-value { font-size: 13px; line-height: 1.5; }
+    .preview-note { margin: 17px 0 0; color: var(--preview-muted); font-size: 12px; line-height: 1.55; }
+
+    @media (max-width: 760px) {
+        .preview-heading { grid-template-columns: 1fr; align-items: start; }
+        .preview-build { width: max-content; }
+        .preview-workbench { grid-template-columns: 1fr; }
+        .preview-checks { padding-right: 0; }
+        .preview-aside { padding: 20px 0 8px; border-top: 1px solid var(--preview-line); border-left: 0; }
+    }
+
+    @media (max-width: 480px) {
+        .preview-inner { width: min(100% - 28px, 1100px); }
+        .preview-topline { align-items: flex-start; }
+        .preview-check { grid-template-columns: 18px minmax(0, 1fr); gap: 10px; }
+        .preview-result { grid-column: 2; max-width: none; text-align: left; }
+        .preview-controls > button { width: 100%; }
+    }
+</style>
+@endsection
+
+@section('content')
+<div class="preview">
+    <div class="preview-inner">
+        <div class="preview-topline">
+            <span class="preview-status">Локальная среда · тесты не меняют данные</span>
+            <a href="/">Открыть сайт</a>
+        </div>
+
+        <header class="preview-heading">
+            <div>
+                <p class="preview-eyebrow">VampqweEngineLight / diagnostics</p>
+                <h1>Проверка проекта</h1>
+                <p class="preview-lede">Ключевые проверки запуска, БД, шаблонов и защиты. Запускаются только выбранные сценарии; тесты базы выполняют запросы без изменения содержимого.</p>
+            </div>
+            <div class="preview-build">PHP {{ PHP_VERSION }}<span>CSRF защищённый запуск</span></div>
+        </header>
+
+        <div class="preview-workbench">
+            <section class="preview-checks" aria-labelledby="preview-tests-title">
+                <div class="preview-section-head">
+                    <h2 id="preview-tests-title">Набор проверок</h2>
+                    <span class="preview-count">6 suites</span>
+                </div>
+
+                <form id="preview-test-form" action="/__dev/preview/run" method="post" data-endpoint="/__dev/preview/run">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="preview-list">
+                        <label class="preview-check" data-check-id="runtime">
+                            <input type="checkbox" name="tests[]" value="runtime" checked>
+                            <span class="preview-check-copy"><span class="preview-check-title">Среда PHP</span><span class="preview-check-description">Версия, PDO и DOM extension</span></span>
+                            <span class="preview-result" data-result="runtime">Не запускался</span>
+                        </label>
+                        <label class="preview-check" data-check-id="application">
+                            <input type="checkbox" name="tests[]" value="application" checked>
+                            <span class="preview-check-copy"><span class="preview-check-title">Bootstrap приложения</span><span class="preview-check-description">Провайдеры и health route</span></span>
+                            <span class="preview-result" data-result="application">Не запускался</span>
+                        </label>
+                        <label class="preview-check" data-check-id="database">
+                            <input type="checkbox" name="tests[]" value="database" checked>
+                            <span class="preview-check-copy"><span class="preview-check-title">База и схема CMS</span><span class="preview-check-description">Страницы, авторы, Schema.org, меню, редиректы</span></span>
+                            <span class="preview-result" data-result="database">Не запускался</span>
+                        </label>
+                        <label class="preview-check" data-check-id="templates">
+                            <input type="checkbox" name="tests[]" value="templates" checked>
+                            <span class="preview-check-copy"><span class="preview-check-title">Шаблонизатор и CSP</span><span class="preview-check-description">Экранирование, доверенный HTML, JSON-LD и nonce</span></span>
+                            <span class="preview-result" data-result="templates">Не запускался</span>
+                        </label>
+                        <label class="preview-check" data-check-id="security">
+                            <input type="checkbox" name="tests[]" value="security" checked>
+                            <span class="preview-check-copy"><span class="preview-check-title">Настройки безопасности</span><span class="preview-check-description">Права config, CSRF и доверенные proxy</span></span>
+                            <span class="preview-result" data-result="security">Не запускался</span>
+                        </label>
+                        <label class="preview-check" data-check-id="rate_limit">
+                            <input type="checkbox" name="tests[]" value="rate_limit" checked>
+                            <span class="preview-check-copy"><span class="preview-check-title">Rate limiter</span><span class="preview-check-description">Локальный счётчик и отсечение сверх лимита</span></span>
+                            <span class="preview-result" data-result="rate_limit">Не запускался</span>
+                        </label>
+                    </div>
+
+                    <div class="preview-controls">
+                        <button class="preview-button" id="preview-run-button" type="submit">Запустить выбранные</button>
+                        <button class="preview-button preview-button-secondary" id="preview-toggle-button" type="button">Снять выделение</button>
+                    </div>
+                    <p class="preview-run-state" id="preview-run-state" aria-live="polite">Выбери проверки и запусти тесты.</p>
+                </form>
+            </section>
+
+            <aside class="preview-aside" aria-label="Состояние окружения">
+                <h2>Окружение</h2>
+                <div class="preview-aside-block"><span class="preview-aside-label">Режим</span><span class="preview-aside-value">Development / loopback</span></div>
+                <div class="preview-aside-block"><span class="preview-aside-label">Хранилище страниц</span><span class="preview-aside-value">{{ db_driver_label }}</span></div>
+                <div class="preview-aside-block"><span class="preview-aside-label">Шаблоны</span><span class="preview-aside-value">Built-in compiler · CSP nonce</span></div>
+                <p class="preview-note">Панель доступна только при включённом локальном флаге и loopback-подключении. Запуск требует действующей сессии и CSRF-токена.</p>
+            </aside>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ $template->getCspNonce() }}">
+(() => {
+    const form = document.getElementById('preview-test-form');
+    const runButton = document.getElementById('preview-run-button');
+    const toggleButton = document.getElementById('preview-toggle-button');
+    const state = document.getElementById('preview-run-state');
+    const checks = Array.from(form.querySelectorAll('input[name="tests[]"]'));
+
+    toggleButton.addEventListener('click', () => {
+        const shouldSelect = checks.some((check) => !check.checked);
+        checks.forEach((check) => { check.checked = shouldSelect; });
+        toggleButton.textContent = shouldSelect ? 'Снять выделение' : 'Выбрать все';
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const selected = checks.filter((check) => check.checked).map((check) => check.value);
+        if (selected.length === 0) {
+            state.dataset.state = 'failed';
+            state.textContent = 'Выбери хотя бы одну проверку.';
+            return;
+        }
+
+        runButton.disabled = true;
+        state.dataset.state = 'running';
+        state.textContent = 'Выполняю проверки…';
+        selected.forEach((id) => {
+            const result = document.querySelector(`[data-result="${CSS.escape(id)}"]`);
+            result.dataset.state = 'running';
+            result.textContent = 'Выполняется';
+        });
+
+        try {
+            const response = await fetch(form.dataset.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({
+                    csrf_token: form.elements.csrf_token.value,
+                    tests: selected,
+                }),
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || `HTTP ${response.status}`);
+            }
+
+            payload.results.forEach((item) => {
+                const result = document.querySelector(`[data-result="${CSS.escape(item.id)}"]`);
+                result.dataset.state = item.status;
+                result.textContent = `${item.status === 'passed' ? 'Пройдено' : 'Ошибка'} · ${item.duration_ms} ms`;
+                result.title = item.message;
+            });
+            state.dataset.state = payload.failed === 0 ? 'passed' : 'failed';
+            state.textContent = `Готово: ${payload.passed} пройдено, ${payload.failed} с ошибкой.`;
+        } catch (error) {
+            state.dataset.state = 'failed';
+            state.textContent = `Не удалось запустить проверки: ${error.message}`;
+        } finally {
+            runButton.disabled = false;
+        }
+    });
+})();
+</script>
+@endsection

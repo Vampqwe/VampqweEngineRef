@@ -1,0 +1,55 @@
+@extends('admin/layouts/admin')
+
+@section('page_title')
+Меню сайта
+@endsection
+
+@section('page_subtitle')
+Drag-and-drop редактор пунктов навигации
+@endsection
+
+@section('content')
+<div class="menu-editor" id="menu-editor">
+
+    <div class="edit-topbar menu-toolbar">
+        <div class="toolbar-left">
+            <button type="button" class="btn btn-primary btn-sm" id="menu-add-root">➕ Новый пункт</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="menu-expand-all">Развернуть все</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="menu-collapse-all">Свернуть все</button>
+        </div>
+        <div class="toolbar-right">
+            <span class="menu-save-status" id="menu-save-status">Все изменения сохранены</span>
+            <button type="button" class="btn btn-success btn-sm" id="menu-save-structure">💾 Сохранить структуру</button>
+            <a href="/admin/" class="btn btn-secondary btn-sm">← Дашборд</a>
+        </div>
+    </div>
+
+    <div class="card card-compact menu-hint-card">
+        <div class="card-body menu-hint">
+            <strong>Как редактировать:</strong> перетаскивайте пункты за ручку <span class="demo-handle">⠿</span> —
+            внутри списка (порядок) и вглубь/наружу (вложенность, подпункт становится дочерним).
+            Клик по названию открывает карточку редактирования. Удаление вместе с подпунктами — красный крестик.
+            После перестановки нажмите «Сохранить структуру».
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Структура меню</h3>
+            <span class="menu-count-badge" id="menu-count"></span>
+        </div>
+			<div class="card-body">
+			<!-- Дерево рендерится JS-скриптом menu-editor.js (в единственном экземпляре).
+			Здесь намеренно нет статической разметки — иначе структура «двоится». -->
+			<ul class="menu-tree" id="menu-tree" aria-label="Древовидный список пунктов меню"></ul>
+            <div class="menu-empty" id="menu-empty" hidden>
+                Меню пусто. Нажмите «➕ Новый пункт», чтобы создать первый элемент.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script id="menu-data" type="application/json">{!! menu_json !!}</script>
+<script id="pages-data" type="application/json">{!! pages_json !!}</script>
+<script src="/assets/js/menu-editor.js"></script>
+@endsection

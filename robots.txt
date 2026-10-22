@@ -1,0 +1,16 @@
+# robots.txt для usyplenie.103vet.by
+User-agent: *
+Allow: /
+Disallow: /__dev/
+Disallow: /api/
+Disallow: /storage/
+Disallow: /logs/
+Disallow: /core/
+Disallow: /vendor/
+Disallow: /views/
+
+# Карта сайта
+Sitemap: https://vampqweenginemedium/sitemap.xml
+
+# Задержки для вежливых ботов
+Crawl-delay: 1
