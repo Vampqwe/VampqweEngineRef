@@ -438,12 +438,6 @@ class InstallService
             ]);
 
             $pdo->prepare("INSERT IGNORE INTO pages (title, description, keywords, canonical, og_title, og_description, meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, page_type, parent_id, status, sort_order, is_in_menu, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([
-                'Ветеринарная клиника в Минске - Достойный уход', 'Круглосуточная ветеринарная помощь в Минске.', null, $baseUrl . '/',
-                'Достойный уход — ветеринарная клиника в Минске', 'Профессиональная ветеринарная помощь 24/7', 'index, follow', null, null, 0, 1, '',
-                '<h1>Главная</h1><p>Добро пожаловать на сайт ветеринарной клиники "Достойный уход".</p>', null, 'home', null, 'published', 0, 1, date('Y-m-d H:i:s'),
-            ]);
-
-            $pdo->prepare("INSERT IGNORE INTO pages (title, description, keywords, canonical, og_title, og_description, meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, page_type, parent_id, status, sort_order, is_in_menu, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([
                 '404 - Страница не найдена', 'Запрашиваемая страница не существует.', null, $baseUrl . '/404',
                 '404 - Страница не найдена', 'Запрашиваемая страница не существует.', 'noindex, nofollow', null, null, 0, 1, '404',
                 '<h1>Страница не найдена</h1><p>К сожалению, запрашиваемая страница не существует или была перемещена.</p>', null, '404', null, 'published', 0, 0, date('Y-m-d H:i:s'),
@@ -458,10 +452,6 @@ class InstallService
             $pdo->prepare("INSERT IGNORE INTO schema_org (page_id, route, schema_type, data, priority, is_active) VALUES (?, ?, ?, ?, ?, 1)")->execute([
                 null, '*', 'VeterinaryCare', json_encode(['name' => 'Достойный уход', 'description' => 'Ветеринарная клиника в Минске', 'url' => $baseUrl], JSON_UNESCAPED_UNICODE), 100,
             ]);
-
-            $pdo->prepare("INSERT IGNORE INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Главная', '/', 1, 10, null, null, null]);
-            $pdo->prepare("INSERT IGNORE INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Поддержка собак', '/sobaki/', null, 20, null, null, null]);
-            $pdo->prepare("INSERT IGNORE INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Поддержка кошек', '/koshki/', null, 30, null, null, null]);
 
             $pdo->commit();
             return ['success' => true, 'message' => 'Начальные данные успешно добавлены'];
