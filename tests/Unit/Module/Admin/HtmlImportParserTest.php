@@ -345,8 +345,10 @@ final class HtmlImportParserTest extends TestCase
 
         $parsed = $parser->parse($html);
 
+        // Поле 'styles' исключено из контракта: инлайн-стили больше не
+        // выносятся в отдельные neutral-файлы (см. testStylesAndScriptsStayInContentNoNeutralFiles).
         foreach (['title', 'description', 'slug', 'content', 'schemas', 'scripts',
-                  'styles', 'images_count', 'warnings', 'blocks', 'values', 'row_sets'] as $key) {
+                  'images_count', 'warnings', 'blocks', 'values', 'row_sets'] as $key) {
             self::assertArrayHasKey($key, $parsed, "Отсутствует поле контракта: {$key}");
         }
     }
