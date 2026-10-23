@@ -157,11 +157,23 @@ class ImportJobHandler
                 array_unshift($scripts, $defaultScript);
             }
 
+            // Побитный импорт: если парсер вернул точный срез исходника
+            // (content_raw=true), сохраняем его байт-в-байт — без обёртки и санитизации.
+            // Точный срез из парсера: raw-режим или fallback (маркеры не найдены —
+            // нормализованный контент, тогда обычная обработка).
+            $mainMarker = (string) ($parsed['blocks']['main_content']['meta']['marker'] ?? '');
+            $rawSlice = $mainMarker === 'raw_slice';
+            $fallbackNorm = $mainMarker === '';
+
             $record = [
                 'title' => $parsed['title'],
                 'description' => $parsed['description'],
                 'slug' => $parsed['slug'],
-                'content' => $this->sanitizeContent((string) $parser->stripDocumentWrapper((string) $parsed['content'])),
+                'content' => $rawSlice
+                    ? (string) ($parsed['blocks']['main_content']['value'] ?? $parsed['content'])
+                    : $this->sanitizeContent($fallbackNorm
+                        ? (string) $parsed['content']
+                        : (string) $parser->stripDocumentWrapper((string) $parsed['content'])),
                 'status' => 'draft',
                 'page_type' => 'article',
                 'meta_robots' => 'index, follow',
@@ -174,7 +186,7 @@ class ImportJobHandler
             // Дополнительные колоночные блоки (config/import-parser.php) — та же
             // логика, что в ImportController::confirm().
             $selfFields = array_fill_keys(array_keys($record), true);
-            foreach ($parser->getActiveBlocks() as $block) {
+            foreach ($parser->getActiveBlocks() as $blockName => $block) {
                 $target = (array) ($block['target'] ?? []);
                 if ((string) ($target['mode'] ?? 'column') !== 'column') {
                     continue;
@@ -191,7 +203,10 @@ class ImportJobHandler
                     continue;
                 }
                 if ($column === 'content') {
-                    $value = $this->sanitizeContent((string) $parser->stripDocumentWrapper((string) $value));
+                    $isRaw = ((string) ($parsed['blocks'][$blockName]['meta']['marker'] ?? '')) === 'raw_slice';
+                    $value = $isRaw
+                        ? (string) ($parsed['blocks'][$blockName]['value'] ?? $value)
+                        : $this->sanitizeContent((string) $parser->stripDocumentWrapper((string) $value));
                 } elseif (!is_string($value)) {
                     $value = (string) $value;
                 }
