@@ -201,6 +201,23 @@ class HtmlImportParser
             $values['slug'] = $slug;
         }
 
+        // Побитный режим импорта ('content_raw' => true в config/import-parser.php):
+        // content = точный срез исходного HTML между маркерами блока main_content
+        // (включая сами комментарии), без DOM-нормализации и обёрток. Так контент
+        // попадает в БД «как есть», побитно — разметка сохраняется один в один.
+        if (($this->rules['content_raw'] ?? false) === true) {
+            $rawSlice = $this->rawMarkerSlice($html, $blocks);
+            if ($rawSlice !== null) {
+                $values['content'] = $rawSlice;
+                $blockResults['main_content']['value'] = $rawSlice;
+                $blockResults['main_content']['found'] = trim($rawSlice) !== '';
+                $blockResults['main_content']['meta']['marker'] = 'raw_slice';
+            } else {
+                $this->warnings[] = 'Побитный режим (content_raw=true): маркеры основного'
+                    . ' контента не найдены — сохранён нормализованный вариант.';
+            }
+        }
+
         // Совместимость со старшим контрактом ImportController/preview.html
         $schemas = $rowSets['schema_org'] ?? [];
         $scriptsRaw = $values['scripts'] ?? null;
@@ -378,6 +395,56 @@ class HtmlImportParser
     }
 
     /**
+     * Точный побитный срез исходного HTML между маркерами контентного блока
+     * (первый marker-блок с колонкой target 'content', иначе 'main_content').
+     * Включает оба комментария-маркера; без какой-либо нормализации.
+     * Возвращает null, если маркеры не найдены.
+     */
+    private function rawMarkerSlice(string $html, array $blocks): ?string
+    {
+        $block = null;
+        foreach ($blocks as $name => $b) {
+            if (!is_array($b) || (string) ($b['type'] ?? '') !== 'marker') {
+                continue;
+            }
+            $target = (array) ($b['target'] ?? []);
+            $column = (string) ($target['column'] ?? '');
+            if ($column === 'content' || (string) $name === 'main_content') {
+                $block = $b;
+                break;
+            }
+        }
+
+        if ($block === null || empty($block['start'])) {
+            return null;
+        }
+
+        [$startPos, $endPos] = $this->findMarkerPositionsForBlock($html, $block, 'main_content');
+        if ($startPos === null) {
+            return null;
+        }
+
+        // Смещение начала start-маркера: нужно включить сам комментарий в срез
+        $patterns = $this->markerPatterns($block['start']);
+        $sliceStart = $startPos;
+        foreach ($patterns as $p) {
+            if (@preg_match($p, $html, $m, PREG_OFFSET_CAPTURE, 0) === 1) {
+                $candidate = (int) $m[0][1];
+                if ($candidate + strlen($m[0][0]) === $startPos) {
+                    $sliceStart = $candidate;
+                    break;
+                }
+            }
+        }
+
+        $slice = $endPos === null
+            ? substr($html, $sliceStart)
+            : substr($html, $sliceStart, $endPos - $sliceStart);
+
+        return trim((string) $slice);
+    }
+
+    /**
      * Извлечение одного блока согласно его описанию из конфига.
      *
      * @return array{found:bool, value:mixed, rows:array, meta:array}
@@ -405,6 +472,19 @@ class HtmlImportParser
                 $nodes = $expr !== '' ? @$xpath->query($expr) : false;
                 if ($nodes === false) {
                     $this->warnings[] = "Блок «{$name}»: некорректное XPath-выражение: {$expr}";
+                    break;
+                }
+                // Режим 'raw': outerHTML найденных узлов без DOM-нормализации
+                // содержимого, сбора стилей и скачивания картинок — побитно.
+                if ((string) ($block['mode'] ?? '') === 'raw') {
+                    $outer = '';
+                    foreach ($nodes as $node) {
+                        $outer .= $doc->saveHTML($node);
+                    }
+                    $result['found'] = trim($outer) !== '';
+                    $result['value'] = $outer;
+                    $result['meta']['nodes'] = $nodes->length;
+                    $result['meta']['marker'] = 'raw';
                     break;
                 }
                 $html = '';
@@ -435,6 +515,16 @@ class HtmlImportParser
 
                     // Отбрасываем закрывающие теги контейнеров, попавшие в начало среза
                     $raw = preg_replace('~^\s*</(main|div|section|article|body|html)\s*>~iu', '', $raw, 1) ?? $raw;
+
+                    // Режим 'raw' ('mode' => 'raw'): байт-в-байт из исходника —
+                    // без DOM-нормализации, скачивания картинок и сбора стилей.
+                    // Так контент попадает в БД «как есть», побитно.
+                    if ((string) ($block['mode'] ?? '') === 'raw') {
+                        $result['value'] = trim($raw);
+                        $result['found'] = $result['value'] !== '';
+                        $result['meta']['marker'] = 'raw';
+                        break;
+                    }
 
                     $result['value'] = $this->normalizeFragment($raw, $block, $name);
                     $result['found'] = trim(strip_tags($result['value'])) !== '' || trim($result['value']) !== '';

@@ -193,7 +193,18 @@ class Template
         // через HtmlSanitizer перед выводом посетителям. Правила —
         // config/html-sanitizer.php. Nonce-обработка ниже остаётся для
         // легитимных inline-скриптов шаблонов.
-        $content = \Core\System\Security\HtmlSanitizer::clean($content);
+        // Исключение: 'raw' — политика «контент хранится и выводится как есть»
+        // (согласованно с записью: PagesController/ImportController при 'raw'
+        // не санитизируют). Sanitize на выводе молча ломала побитный импорт.
+        $modeFile = dirname(__DIR__, 3) . '/config/page-content.php';
+        $mode = 'sanitize';
+        if (is_file($modeFile)) {
+            $modeCfg = (array) require $modeFile;
+            $mode = (string) ($modeCfg['content_mode'] ?? 'sanitize');
+        }
+        if ($mode !== 'raw') {
+            $content = \Core\System\Security\HtmlSanitizer::clean($content);
+        }
 
         $wrapperId = 'trusted-content-' . bin2hex(random_bytes(8));
         $document = new \DOMDocument('1.0', 'UTF-8');
