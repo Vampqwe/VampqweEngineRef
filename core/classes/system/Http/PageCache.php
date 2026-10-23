@@ -172,11 +172,33 @@ class PageCache
         }
 
         if ($data['expires_at'] < time()) {
-            @unlink($file);
+            // Просрочено: удаляем только вышедшие за stale-период копии.
+            // В окне stale-if-error файл сохраняем — middleware сможет отдать
+            // его при сбое бэкенда вместо «белого экрана» 500.
+            if (!$this->isWithinStaleWindow($data)) {
+                @unlink($file);
+            }
+
             return null;
         }
 
         return $data;
+    }
+
+    /**
+     * Находится ли просроченная запись в окне stale-if-error
+     * (PAGE_CACHE_STALE, по умолчанию 86400 сек). Такие копии не удаляются
+     * при чтении и служат страховкой на случай сбоя бэкенда.
+     */
+    public function isWithinStaleWindow(array $data): bool
+    {
+        $stale = max(0, $this->config->getInt('PAGE_CACHE_STALE', 86400));
+
+        if ($stale === 0) {
+            return false;
+        }
+
+        return ($data['expires_at'] ?? 0) + $stale >= time();
     }
 
     /**
