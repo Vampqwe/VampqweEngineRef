@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Controllers;
 
 use Core\Module\Admin\Services\HtmlImportParser;
+use Core\Module\Admin\Services\ImportJobHandler;
 use Core\Module\Admin\Services\ImportService;
 use Core\Module\Page\PageService;
 use Core\Module\Admin\Services\AdminService;
@@ -140,6 +141,17 @@ class ImportController
             // отчёт не критичен для импорта
         }
 
+        // Фоновый режим: сохраняем загруженный файл во временное хранилище
+        // очереди и запоминаем путь в данных предпросмотра — confirm()
+        // положит его в job вместо тяжёлой синхронной обработки.
+        $handler = new ImportJobHandler($this->config);
+        if ($handler->isQueueEnabled()) {
+            $staged = $handler->stageUpload((string) $file['tmp_name']);
+            if ($staged !== null) {
+                $parsed['import_file'] = $staged;
+            }
+        }
+
         $this->session->set(self::PREVIEW_KEY, $parsed);
 
         $html = $this->template->render('admin/import/preview', [
@@ -169,10 +181,24 @@ class ImportController
             return Response::redirect('/admin/import');
         }
 
+        // Фоновый режим (QUEUE_ENABLED=true): тяжёлые шаги — скачивание
+        // картинок, запись блоков/стилей — выполняет воркер bin/queue-work.php.
+        // Веб-процесс лишь кладёт сохранённый во время upload() файл в очередь.
+        $queued = $this->dispatchBackgroundImport($parsed);
+        if ($queued !== null) {
+            $this->session->remove(self::PREVIEW_KEY);
+            $this->adminService->setFlash(
+                'success',
+                'Импорт принят в фоновую обработку (задача ' . $queued . '). Страница появится в списке как черновик.'
+            );
+            return Response::redirect('/admin/import');
+        }
+
         $exists = $this->pageService->pageExistsBySlug($parsed['slug']);
 
         if ($exists) {
             $this->adminService->setFlash('error', 'Страница с slug "' . $parsed['slug'] . '" уже существует.');
+            (new ImportJobHandler($this->config))->forgetStagedFile();
             $this->session->remove(self::PREVIEW_KEY);
             return Response::redirect('/admin/import');
         }
@@ -299,5 +325,27 @@ class ImportController
         $this->adminService->setFlash('success', 'Страница импортирована! ID: ' . $id);
 
         return Response::redirect('/admin/pages/' . $id . '/edit');
+    }
+
+    /**
+     * Поставить импорт в очередь, если фоновый режим включён и временный
+     * файл доступен. Возвращает id задачи или null (очередь выключена /
+     * файл потерян — работаем синхронно по-старому).
+     */
+    private function dispatchBackgroundImport(array $parsed): ?string
+    {
+        $handler = new ImportJobHandler($this->config);
+        if (!$handler->isQueueEnabled()) {
+            return null;
+        }
+
+        $file = (string) ($parsed['import_file'] ?? '');
+        if ($file === '' || !is_file($file)) {
+            return null;
+        }
+
+        $user = $this->session->adminUser();
+
+        return $handler->dispatch($file, (int) ($user['id'] ?? 0));
     }
 }

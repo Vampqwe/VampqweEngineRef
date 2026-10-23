@@ -21,6 +21,7 @@ namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
 use Core\System\DataBase\DataBase;
+use Core\System\Queue\Queue;
 use Core\System\Security\HtmlSanitizer;
 
 /**
@@ -37,11 +38,50 @@ class ImportJobHandler
 {
     public const JOB_NAME = 'import.html';
 
+    /** Ключ хранения результата парсинга в сессии администратора. */
+    public const SESSION_KEY = 'import_preview';
+
     /** Срок жизни временного файла импорта (старые файлы удаляются воркером). */
     private const TMP_TTL_SECONDS = 86400;
 
-    public function __construct(private Config $config)
+    public function __construct(private Config $config, private ?Queue $queue = null)
     {
+        $this->queue ??= new Queue($config);
+    }
+
+    /**
+     * Поставить импорт в очередь (вызывается из веб-процесса).
+     * Возвращает id задачи или null, если очередь выключена (QUEUE_ENABLED=false).
+     */
+    public function dispatch(string $file, int $userId): ?string
+    {
+        if (!$this->queue->isEnabled()) {
+            return null;
+        }
+
+        return $this->queue->push(self::JOB_NAME, [
+            'file' => $file,
+            'user_id' => $userId,
+        ]);
+    }
+
+    /**
+     * Фоновый режим включён (QUEUE_ENABLED=true)?
+     */
+    public function isQueueEnabled(): bool
+    {
+        return $this->queue->isEnabled();
+    }
+
+    /**
+     * Удалить временный файл job'а из сессии (если он там есть).
+     */
+    public function forgetStagedFile(): void
+    {
+        $file = (string) ($_SESSION[self::SESSION_KEY]['import_file'] ?? '');
+        if ($file !== '' && is_file($file)) {
+            @unlink($file);
+        }
     }
 
     /**
