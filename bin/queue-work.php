@@ -15,6 +15,7 @@ declare(strict_types=1);
  *
  * Зарегистрированные задачи:
  *   sitemap.rebuild — пересборка storage/sitemap/sitemap.xml из БД.
+ *   import.html     — фоновый импорт HTML-страницы (тяжёлый парсинг/картинки).
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -24,6 +25,7 @@ if (PHP_SAPI !== 'cli') {
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
+use Core\Module\Admin\Services\ImportJobHandler;
 use Core\Module\Page\SitemapGenerator;
 use Core\Module\Page\SitemapService;
 use Core\System\Config\Config;
@@ -41,6 +43,11 @@ $config = Config::getInstance();
 $logger = new Logger($config);
 
 $registry = new JobRegistry();
+
+// ─── import.html ────────────────────────────────────────────────────
+$registry->register(ImportJobHandler::JOB_NAME, static function (array $data): void {
+    (new ImportJobHandler(Config::getInstance()))->handle($data);
+});
 
 // ─── sitemap.rebuild ────────────────────────────────────────────────
 $registry->register(SitemapGenerator::JOB_NAME, static function (array $data) use ($config): void {

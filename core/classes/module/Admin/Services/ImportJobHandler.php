@@ -21,6 +21,7 @@ namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
 use Core\System\DataBase\DataBase;
+use Core\System\Queue\Queue;
 use Core\System\Security\HtmlSanitizer;
 
 /**
@@ -37,11 +38,50 @@ class ImportJobHandler
 {
     public const JOB_NAME = 'import.html';
 
+    /** Ключ хранения результата парсинга в сессии администратора. */
+    public const SESSION_KEY = 'import_preview';
+
     /** Срок жизни временного файла импорта (старые файлы удаляются воркером). */
     private const TMP_TTL_SECONDS = 86400;
 
-    public function __construct(private Config $config)
+    public function __construct(private Config $config, private ?Queue $queue = null)
     {
+        $this->queue ??= new Queue($config);
+    }
+
+    /**
+     * Поставить импорт в очередь (вызывается из веб-процесса).
+     * Возвращает id задачи или null, если очередь выключена (QUEUE_ENABLED=false).
+     */
+    public function dispatch(string $file, int $userId): ?string
+    {
+        if (!$this->queue->isEnabled()) {
+            return null;
+        }
+
+        return $this->queue->push(self::JOB_NAME, [
+            'file' => $file,
+            'user_id' => $userId,
+        ]);
+    }
+
+    /**
+     * Фоновый режим включён (QUEUE_ENABLED=true)?
+     */
+    public function isQueueEnabled(): bool
+    {
+        return $this->queue->isEnabled();
+    }
+
+    /**
+     * Удалить временный файл job'а из сессии (если он там есть).
+     */
+    public function forgetStagedFile(): void
+    {
+        $file = (string) ($_SESSION[self::SESSION_KEY]['import_file'] ?? '');
+        if ($file !== '' && is_file($file)) {
+            @unlink($file);
+        }
     }
 
     /**
@@ -236,26 +276,27 @@ class ImportJobHandler
     }
 
     /**
-     * Flash-уведомление администратору: прямой write в его сессионный файл
-     * (воркер вне HTTP-сессии). Совместимо с FileSessionStorage; для Redis
-     * драйвера уведомление просто теряется (не критично).
+     * Уведомление администратору о результате фоновой задачи.
+     *
+     * Воркер работает вне HTTP-сессии, а прямо писать в чужую сессию
+     * небезопасно и несовместимо с драйвером redis. Поэтому результат
+     * складывается в простой JSON-файл storage/import/notifications.json
+     * (ключ — user id). Админ-панель может показать его при следующем
+     * визите; до интеграции UI уведомления остаются в этом файле.
      */
     private function notify(int $userId, string $type, string $message): void
     {
         if ($userId <= 0) {
             return;
         }
-        $sid = SessionIndex::find((string) $userId);
-        if ($sid === null) {
+
+        $dir = $this->config->getStoragePath('import');
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
             return;
         }
+        $file = $dir . DIRECTORY_SEPARATOR . 'notifications.json';
 
-        $sessionFile = session_save_path() . '/sess_' . $sid;
-        if (!is_file($sessionFile)) {
-            return;
-        }
-
-        $handle = @fopen($sessionFile, 'c+b');
+        $handle = @fopen($file, 'c+b');
         if ($handle === false) {
             return;
         }
@@ -268,18 +309,26 @@ class ImportJobHandler
         while (($chunk = fread($handle, 65536)) !== false) {
             $data .= $chunk;
         }
+        $store = json_decode((string) $data, true);
+        if (!is_array($store)) {
+            $store = [];
+        }
 
-        // Добавляем запись flash в конец сериализованных данных сессии.
-        $key = '_flash_' . $type;
-        $entry = $key . '|' . serialize([
-            'messages' => [$message],
-            'keep' => true,
-        ]);
-        $data = rtrim($data, "\r\n") . "\n" . $entry;
+        $entry = [
+            'type' => $type,
+            'message' => $message,
+            'at' => date('Y-m-d H:i:s'),
+        ];
+        $store[(string) $userId][] = $entry;
+        // Не копить бесконечно: храним последние 20 уведомлений на пользователя.
+        $store[(string) $userId] = array_slice($store[(string) $userId], -20);
 
         ftruncate($handle, 0);
         rewind($handle);
-        fwrite($handle, $data);
+        fwrite(
+            $handle,
+            (string) json_encode($store, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
         fflush($handle);
         flock($handle, LOCK_UN);
         fclose($handle);
