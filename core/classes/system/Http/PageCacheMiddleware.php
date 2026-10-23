@@ -192,6 +192,12 @@ class PageCacheMiddleware implements Middleware
             return null;
         }
 
+        // Страховка годится только в пределах окна stale-if-error
+        // (PAGE_CACHE_STALE); слишком древние копии не отдаём.
+        if (!$this->cache->isWithinStaleWindow($data)) {
+            return null;
+        }
+
         $response = $this->replay($data, $request);
         $response->setHeader('X-Page-Cache', 'STALE');
 

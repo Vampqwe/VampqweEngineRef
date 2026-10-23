@@ -164,11 +164,37 @@ final class PageCacheTest extends TestCase
             'content' => 'old',
             'path' => '/about',
             'created_at' => time() - 120,
-            'expires_at' => time() - 60,
+            // Просрочена давно — за пределами окна stale-if-error,
+            // при чтении должна быть удалена безвозвратно.
+            'expires_at' => time() - 60 - 86401,
         ]));
 
         $this->assertNull($cache->read($key));
         $this->assertFileDoesNotExist($file, 'Просроченная запись удаляется при чтении');
+    }
+
+    public function testRecentlyExpiredEntryIsKeptForStaleIfError(): void
+    {
+        $cache = new PageCache($this->config);
+        $key = $cache->buildKey($this->makeRequest());
+
+        $file = $cache->getDir() . DIRECTORY_SEPARATOR . $key . '.html.meta';
+        if (!is_dir($cache->getDir())) {
+            mkdir($cache->getDir(), 0777, true);
+        }
+        file_put_contents($file, serialize([
+            'status' => 200,
+            'headers' => [],
+            'content' => 'old',
+            'path' => '/about',
+            'created_at' => time() - 120,
+            'expires_at' => time() - 60,
+        ]));
+
+        // В окне stale-if-error read() отвергает запись, но файл сохраняет:
+        // middleware сможет отдать его как страховку при сбое бэкенда.
+        $this->assertNull($cache->read($key));
+        $this->assertFileExists($file, 'Свежая stale-копия сохраняется');
     }
 
     public function testPurgeRemovesAllVariantsOfPath(): void
