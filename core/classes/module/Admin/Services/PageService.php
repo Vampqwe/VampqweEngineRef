@@ -50,12 +50,12 @@ class PageService extends \Core\Module\Page\PageService
         $perPage = max(1, min($perPage, self::MAX_PER_PAGE));
         $page = max(1, $page);
         $offset = ($page - 1) * $perPage;
-        
+
         $pages = $this->db->fetchAll(
-            "SELECT p.*, a.name as author_name 
-             FROM pages p 
-             LEFT JOIN authors a ON p.author_id = a.id 
-             ORDER BY p.updated_at DESC 
+            "SELECT p.*, a.name as author_name
+             FROM pages p
+             LEFT JOIN authors a ON p.author_id = a.id
+             ORDER BY p.updated_at DESC
              LIMIT {$perPage} OFFSET {$offset}"
         );
 
@@ -76,9 +76,9 @@ class PageService extends \Core\Module\Page\PageService
     public function getPage(int $id): ?array
     {
         return $this->db->fetchOne(
-            "SELECT p.*, a.name as author_name 
-             FROM pages p 
-             LEFT JOIN authors a ON p.author_id = a.id 
+            "SELECT p.*, a.name as author_name
+             FROM pages p
+             LEFT JOIN authors a ON p.author_id = a.id
              WHERE p.id = :id",
             ['id' => $id]
         );
@@ -90,11 +90,11 @@ class PageService extends \Core\Module\Page\PageService
     public function createPage(array $data): int
     {
         $this->db->execute(
-            "INSERT INTO pages (title, description, keywords, canonical, og_title, og_description, 
-             meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, 
-             page_type, parent_id, status, sort_order, is_in_menu, published_at) 
-             VALUES (:title, :description, :keywords, :canonical, :og_title, :og_description, 
-             :meta_robots, :og_image, :reading_time, :views_count, :author_id, :slug, :content, 
+            "INSERT INTO pages (title, description, keywords, canonical, og_title, og_description,
+             meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts,
+             page_type, parent_id, status, sort_order, is_in_menu, published_at)
+             VALUES (:title, :description, :keywords, :canonical, :og_title, :og_description,
+             :meta_robots, :og_image, :reading_time, :views_count, :author_id, :slug, :content,
              :scripts, :page_type, :parent_id, :status, :sort_order, :is_in_menu, :published_at)",
             [
                 'title' => $data['title'],
@@ -195,15 +195,15 @@ class PageService extends \Core\Module\Page\PageService
         $slug = preg_replace('/-+/', '-', $slug);
         return trim($slug, '-');
     }
-	
-	    /**
+
+        /**
      * Добавить Schema.org разметку для страницы
      */
     public function addSchemaForPage(int $pageId, array $schemas): void
     {
         foreach ($schemas as $schema) {
             $this->db->execute(
-                "INSERT INTO schema_org (page_id, route, schema_type, data, priority, is_active) 
+                "INSERT INTO schema_org (page_id, route, schema_type, data, priority, is_active)
                  VALUES (:page_id, :route, :schema_type, :data, :priority, 1)",
                 [
                     'page_id' => $pageId,

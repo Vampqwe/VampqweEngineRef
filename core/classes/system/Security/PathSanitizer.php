@@ -85,12 +85,12 @@ class PathSanitizer
 
             if ($realParent !== false) {
                 $basename = basename($fullPath);
-                
+
                 // Защита от ../ в basename
                 if ($basename === '.' || $basename === '..') {
                     throw SecurityException::pathTraversal($path);
                 }
-                
+
                 $fullPath = $this->normalizePath($realParent) . DIRECTORY_SEPARATOR . $basename;
             }
         }

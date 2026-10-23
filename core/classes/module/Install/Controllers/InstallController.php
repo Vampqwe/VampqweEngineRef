@@ -276,7 +276,7 @@ class InstallController
     private function render(string $view, string $title, array $extra = []): Response
     {
         $flash = $this->adminService->getFlash();
-        
+
         $html = $this->template->render($view, array_merge([
             'title' => $title,
             'flash' => $flash,

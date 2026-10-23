@@ -1,8 +1,2 @@
-config.env
-storage/.install_key
-storage/.install_seed
-logs/
-*.log
-storage/cache/*
-!storage/cache/.gitkeep
-storage/.rate_limits/
+.phpunit.cache/
+vendor/

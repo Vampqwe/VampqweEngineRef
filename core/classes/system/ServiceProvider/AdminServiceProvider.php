@@ -54,30 +54,30 @@ class AdminServiceProvider extends ServiceProvider
         // Корень проекта — единый резолвер (канон — APP_ROOT_PATH,
         // см. Config::getRootPath() → PathResolver/ProjectRoot).
         $basePath = $config->getRootPath();
-        $this->container->singleton(InstallService::class, fn() => 
+        $this->container->singleton(InstallService::class, fn() =>
             new InstallService($config, $basePath)
         );
 
-        $this->container->singleton(AdminService::class, fn() => 
+        $this->container->singleton(AdminService::class, fn() =>
             new AdminService($db)
         );
 
-        $this->container->singleton(SuperAdminAuth::class, fn() => 
+        $this->container->singleton(SuperAdminAuth::class, fn() =>
             new SuperAdminAuth($config)
         );
-		
-		$this->container->singleton(PageService::class, fn() => 
-			new PageService($this->container->get(DataBase::class))
-		);
-		
-		$this->container->singleton(HtmlSanitizer::class, fn() => new HtmlSanitizer());
-		
-		$this->container->singleton(HtmlImportParser::class, fn() => 
-			new HtmlImportParser($config)
-		);
-		$this->container->singleton(MenuAdminService::class, fn() =>
-			new MenuAdminService($db)
-		);
+
+        $this->container->singleton(PageService::class, fn() =>
+            new PageService($this->container->get(DataBase::class))
+        );
+
+        $this->container->singleton(HtmlSanitizer::class, fn() => new HtmlSanitizer());
+
+        $this->container->singleton(HtmlImportParser::class, fn() =>
+            new HtmlImportParser($config)
+        );
+        $this->container->singleton(MenuAdminService::class, fn() =>
+            new MenuAdminService($db)
+        );
     }
 
     public function boot(): void

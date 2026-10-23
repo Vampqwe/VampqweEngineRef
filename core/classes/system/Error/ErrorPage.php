@@ -137,11 +137,11 @@ class ErrorPage
             ? $this->renderPrevious($data['previous'])
             : '';
         $contextHtml = $this->debug ? $this->renderContext($data) : '';
-        
+
         // Выносим тернарные операторы за пределы heredoc
         $debugBadge = $data['debug'] ? '<span class="badge badge-debug">Debug Mode</span>' : '';
-        $traceSection = ($data['debug'] && !empty($data['trace'])) 
-            ? $this->renderTraceSection($data['trace']) 
+        $traceSection = ($data['debug'] && !empty($data['trace']))
+            ? $this->renderTraceSection($data['trace'])
             : '';
 
         return <<<HTML
@@ -153,7 +153,7 @@ class ErrorPage
     <title>{$data['icon']} {$this->escape($data['title'])} — {$this->escape($data['app_name'])}</title>
     <style nonce="{$this->cspNonce}">
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -475,7 +475,7 @@ class ErrorPage
         <div class="card">
             <div class="card-title"> Сообщение об ошибке</div>
             <div class="error-message">{$this->escape($data['message'])}</div>
-            
+
             <div class="location">
                 <span class="location-icon"></span>
                 <span class="location-text">{$this->escape($data['file'])}</span>

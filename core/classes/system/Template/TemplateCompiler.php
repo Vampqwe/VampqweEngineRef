@@ -65,16 +65,16 @@ class TemplateCompiler
             function ($matches) {
                 $fullMatch = $matches[0];
                 $varName = $matches[1];
-                
+
                 // Извлекаем все свойства после точки
                 preg_match_all('/\.([a-zA-Z_][a-zA-Z0-9_]*)/', $fullMatch, $propMatches);
                 $props = $propMatches[1];
-                
+
                 $result = '$' . $varName;
                 foreach ($props as $prop) {
                     $result .= "['{$prop}']";
                 }
-                
+
                 return $result;
             },
             $expr
@@ -86,16 +86,16 @@ class TemplateCompiler
             function ($matches) {
                 $fullMatch = $matches[0];
                 $varName = $matches[1];
-                
+
                 // Извлекаем все свойства после точки
                 preg_match_all('/\.([a-zA-Z_][a-zA-Z0-9_]*)/', $fullMatch, $propMatches);
                 $props = $propMatches[1];
-                
+
                 $result = '$' . $varName;
                 foreach ($props as $prop) {
                     $result .= "['{$prop}']";
                 }
-                
+
                 return $result;
             },
             $expr
@@ -137,17 +137,17 @@ class TemplateCompiler
             '/(?<![a-zA-Z0-9_\'"\$])([a-z_][a-zA-Z0-9_]*)(?![a-zA-Z0-9_\'"\$\(])/',
             function ($matches) use ($skipWords) {
                 $word = $matches[1];
-                
+
                 // Пропускаем PHP-ключевые слова
                 if (in_array(strtolower($word), $skipWords, true)) {
                     return $word;
                 }
-                
+
                 // Пропускаем UPPER_CASE константы
                 if (strtoupper($word) === $word && strlen($word) > 1) {
                     return $word;
                 }
-                
+
                 return '$' . $word;
             },
             $expr
@@ -384,7 +384,7 @@ private function compileYield(string $template): string
         foreach ($pairs as $open => $close) {
             $openPattern = '/' . preg_quote($open, '/') . '(?=[\s(])/';
             $closePattern = '/' . preg_quote($close, '/') . '\b/';
-            
+
             $openCount = preg_match_all($openPattern, $template);
             $closeCount = preg_match_all($closePattern, $template);
 
