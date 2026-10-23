@@ -53,10 +53,6 @@ class PageCacheMiddleware implements Middleware
 
     public function handle(Request $request, callable $next): Response
     {
-        if (!$this->cache->isEnabled()) {
-            return $next($request);
-        }
-
         // Админ-панель никогда не отдаётся из кеша и не кешируется:
         // там персонализированный контент, CSRF-токены и формы.
         if ($this->isAdminPath($request->getPath())) {
@@ -75,6 +71,10 @@ class PageCacheMiddleware implements Middleware
             $this->invalidateAfterMutation($request, $response);
 
             return $response;
+        }
+
+        if (!$this->cache->isEnabled()) {
+            return $next($request);
         }
 
         try {

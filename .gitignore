@@ -1,2 +1,2 @@
-.env
-.env.local
+storage/cache/
+.phpunit.cache/
