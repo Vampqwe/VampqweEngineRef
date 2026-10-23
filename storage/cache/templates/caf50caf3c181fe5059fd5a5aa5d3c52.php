@@ -33,14 +33,6 @@
 	<link href="/assets/fonts/fontsgoogleapis300400500PlayfairDisplayitalwght4005001400displayswap.css" rel="stylesheet">
 
 	<link rel="stylesheet" href="/assets/css/style.css">
-	
-	<?php 
-		$neutralFsPath = \Core\System\Config\Config::getInstance()->getStoragePath('neutral-style.css');
-	 ?>
-	<?php if (is_file($neutralFsPath) && filesize($neutralFsPath) > 0): ?>
-	<link rel="stylesheet" href="/storage/neutral-style.css?v=<?php echo htmlspecialchars((string) (filemtime($neutralFsPath)), ENT_QUOTES, 'UTF-8'); ?>">
-	<?php endif; ?>
-
     
     <?php echo $template->cspNonceMeta(); ?>
     
@@ -123,9 +115,7 @@
 
     
     
-    <main>
         <?php echo $__template->yieldSection('content', ''); ?>
-    </main>
     
     
     <footer>
@@ -136,7 +126,6 @@
             </p>
         </div>
     </footer>
-    
     
     <?php echo $__template->yieldSection('scripts', ''); ?>
 </body>

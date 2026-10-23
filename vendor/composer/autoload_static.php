@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
+class ComposerStaticInitc8f9456641f936c8f0667967a3ae63ee
 {
     public static $files = array (
         '6124b4c8570aa390c21fafd04a26c69f' => __DIR__ . '/..' . '/myclabs/deep-copy/src/DeepCopy/deep_copy.php',
@@ -69,6 +69,7 @@ class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
         'Core\\Module\\Admin\\Services\\AdminService' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/AdminService.php',
         'Core\\Module\\Admin\\Services\\ConfigFileParser' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/ConfigFileParser.php',
         'Core\\Module\\Admin\\Services\\HtmlImportParser' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/HtmlImportParser.php',
+        'Core\\Module\\Admin\\Services\\ImportJobHandler' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/ImportJobHandler.php',
         'Core\\Module\\Admin\\Services\\ImportService' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/ImportService.php',
         'Core\\Module\\Admin\\Services\\MenuAdminService' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/MenuAdminService.php',
         'Core\\Module\\Admin\\Services\\PageService' => __DIR__ . '/../..' . '/core/classes/module/Admin/Services/PageService.php',
@@ -90,6 +91,7 @@ class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
         'Core\\Module\\Page\\RedirectService' => __DIR__ . '/../..' . '/core/classes/module/Page/RedirectService.php',
         'Core\\Module\\Page\\RobotsController' => __DIR__ . '/../..' . '/core/classes/module/Page/RobotsController.php',
         'Core\\Module\\Page\\SitemapController' => __DIR__ . '/../..' . '/core/classes/module/Page/SitemapController.php',
+        'Core\\Module\\Page\\SitemapGenerator' => __DIR__ . '/../..' . '/core/classes/module/Page/SitemapGenerator.php',
         'Core\\Module\\Page\\SitemapService' => __DIR__ . '/../..' . '/core/classes/module/Page/SitemapService.php',
         'Core\\Module\\Page\\ViewCounter' => __DIR__ . '/../..' . '/core/classes/module/Page/ViewCounter.php',
         'Core\\System\\Application\\Application' => __DIR__ . '/../..' . '/core/classes/system/Application/Application.php',
@@ -122,6 +124,7 @@ class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
         'Core\\System\\Http\\NotInstalledPage' => __DIR__ . '/../..' . '/core/classes/system/Http/NotInstalledPage.php',
         'Core\\System\\Http\\PageCache' => __DIR__ . '/../..' . '/core/classes/system/Http/PageCache.php',
         'Core\\System\\Http\\PageCacheMiddleware' => __DIR__ . '/../..' . '/core/classes/system/Http/PageCacheMiddleware.php',
+        'Core\\System\\Http\\RateLimitMiddleware' => __DIR__ . '/../..' . '/core/classes/system/Http/RateLimitMiddleware.php',
         'Core\\System\\Http\\Request' => __DIR__ . '/../..' . '/core/classes/system/Http/Request.php',
         'Core\\System\\Http\\Response' => __DIR__ . '/../..' . '/core/classes/system/Http/Response.php',
         'Core\\System\\Http\\Route' => __DIR__ . '/../..' . '/core/classes/system/Http/Route.php',
@@ -134,6 +137,8 @@ class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
         'Core\\System\\Map\\Map' => __DIR__ . '/../..' . '/core/classes/system/Map/Map.php',
         'Core\\System\\Map\\MapException' => __DIR__ . '/../..' . '/core/classes/system/Map/MapException.php',
         'Core\\System\\Map\\SortOrder' => __DIR__ . '/../..' . '/core/classes/system/Map/SortOrder.php',
+        'Core\\System\\Queue\\JobRegistry' => __DIR__ . '/../..' . '/core/classes/system/Queue/JobRegistry.php',
+        'Core\\System\\Queue\\Queue' => __DIR__ . '/../..' . '/core/classes/system/Queue/Queue.php',
         'Core\\System\\Security\\AuditLogger' => __DIR__ . '/../..' . '/core/classes/system/Security/AuditLogger.php',
         'Core\\System\\Security\\CsrfToken' => __DIR__ . '/../..' . '/core/classes/system/Security/CsrfToken.php',
         'Core\\System\\Security\\HtmlSanitizer' => __DIR__ . '/../..' . '/core/classes/system/Security/HtmlSanitizer.php',
@@ -1659,6 +1664,8 @@ class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
         'Tests\\Unit\\System\\Http\\CsrfMiddlewareTest' => __DIR__ . '/../..' . '/tests/Unit/System/Http/CsrfMiddlewareTest.php',
         'Tests\\Unit\\System\\Http\\HeaderStyleGateTest' => __DIR__ . '/../..' . '/tests/Unit/System/Http/HeaderStyleGateTest.php',
         'Tests\\Unit\\System\\Http\\PageCacheTest' => __DIR__ . '/../..' . '/tests/Unit/System/Http/PageCacheTest.php',
+        'Tests\\Unit\\System\\Http\\RateLimitMiddlewareTest' => __DIR__ . '/../..' . '/tests/Unit/System/Http/RateLimitMiddlewareTest.php',
+        'Tests\\Unit\\System\\Queue\\QueueTest' => __DIR__ . '/../..' . '/tests/Unit/System/Queue/QueueTest.php',
         'Tests\\Unit\\System\\Security\\CsrfTokenTest' => __DIR__ . '/../..' . '/tests/Unit/System/Security/CsrfTokenTest.php',
         'Tests\\Unit\\System\\Security\\PathSanitizerTest' => __DIR__ . '/../..' . '/tests/Unit/System/Security/PathSanitizerTest.php',
         'Tests\\Unit\\System\\Session\\SessionStorageTest' => __DIR__ . '/../..' . '/tests/Unit/System/Session/SessionStorageTest.php',
@@ -1675,9 +1682,9 @@ class ComposerStaticInitbf654ced999c490af00a461e2a9cff23
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitbf654ced999c490af00a461e2a9cff23::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitbf654ced999c490af00a461e2a9cff23::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInitbf654ced999c490af00a461e2a9cff23::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInitc8f9456641f936c8f0667967a3ae63ee::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInitc8f9456641f936c8f0667967a3ae63ee::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInitc8f9456641f936c8f0667967a3ae63ee::$classMap;
 
         }, null, ClassLoader::class);
     }

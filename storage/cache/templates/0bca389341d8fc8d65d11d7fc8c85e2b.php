@@ -14,6 +14,8 @@
 
 <?php $__template->startSection('og_description', ); ?><?php echo htmlspecialchars((string) (trim($page['og_description'])), ENT_QUOTES, 'UTF-8'); ?><?php $__template->endSection('og_description'); ?>
 
+<?php $__template->startSection('og_type', ); ?>article<?php $__template->endSection('og_type'); ?>
+
 <?php $__template->startSection('og_image_tag', ); ?>
     <?php if (!empty($page['og_image'])): ?>
         <meta property="og:image" content="<?php echo htmlspecialchars((string) ($og_image_url), ENT_QUOTES, 'UTF-8'); ?>">

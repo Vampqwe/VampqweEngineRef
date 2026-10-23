@@ -33,14 +33,6 @@
 	<link href="/assets/fonts/fontsgoogleapis300400500PlayfairDisplayitalwght4005001400displayswap.css" rel="stylesheet">
 
 	<link rel="stylesheet" href="/assets/css/style.css">
-	{{-- Промежуточный файл стилей импорта отдаётся движком: /storage/neutral-style.css --}}
-	@php
-		$neutralFsPath = \Core\System\Config\Config::getInstance()->getStoragePath('neutral-style.css');
-	@endphp
-	@if(is_file($neutralFsPath) && filesize($neutralFsPath) > 0)
-	<link rel="stylesheet" href="/storage/neutral-style.css?v={{ filemtime($neutralFsPath) }}">
-	@endif
-
     {{-- CSP Nonce --}}
     {!! $template->cspNonceMeta() !!}
     
@@ -123,9 +115,7 @@
 
     
     {{-- Основной контент --}}
-    <main>
         @yield('content', '')
-    </main>
     
     {{-- Подвал --}}
     <footer>
@@ -136,7 +126,6 @@
             </p>
         </div>
     </footer>
-    
     {{-- Внешние скрипты из БД --}}
     @yield('scripts', '')
 </body>

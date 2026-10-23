@@ -1,0 +1,79 @@
+<?php $__template->setLayout('admin/layouts/admin'); ?>
+
+<?php $__template->startSection('title', ); ?>
+{% if install_finished %}Установка завершена{% else %}Подтверждение завершения установки{% endif %}
+<?php $__template->endSection('title'); ?>
+
+<?php $__template->startSection('content', ); ?>
+<div class="install-wizard">
+    <div class="install-header">
+        {% if install_finished %}
+        <h1> Инициализация сайта завершена!</h1>
+        <p>Все шаги успешно выполнены</p>
+        {% else %}
+        <h1>Шаг 5: Подтверждение завершения установки</h1>
+        <p>Проверьте данные и подтвердите создание файла-маркера установки</p>
+        {% endif %}
+        <div class="progress-bar">
+            <div class="progress-step completed" style="background: var(--green); border-color: var(--green); color: white;">✓</div>
+            <div class="progress-step completed" style="background: var(--green); border-color: var(--green); color: white;">✓</div>
+            <div class="progress-step completed" style="background: var(--green); border-color: var(--green); color: white;">✓</div>
+            <div class="progress-step completed" style="background: var(--green); border-color: var(--green); color: white;">✓</div>
+            <div class="progress-step {% if install_finished %}completed{% endif %}" style="{% if install_finished %}background: var(--green); border-color: var(--green); color: white;{% endif %}">{% if install_finished %}✓{% else %}5{% endif %}</div>
+        </div>
+    </div>
+
+    {% if not install_finished %}
+    <div class="install-card" style="text-align: center; padding: 3rem 2rem;">
+        <h2 style="color: var(--teal-light); margin-bottom: 1rem;">Готово к финализации</h2>
+        <p style="color: var(--silver); font-size: 1.125rem; margin-bottom: 2rem;">
+            Будет создан файл-маркер <code>storage/.installed</code>, записаны итоговые настройки
+            и обновлены конфигурации. После этого мастер установки будет закрыт.
+        </p>
+        <form method="post" action="/admin/install/step5" style="display: inline;">
+            <input type="hidden" name="_csrf_token" value="<?php echo htmlspecialchars((string) ($csrf_token), ENT_QUOTES, 'UTF-8'); ?>">
+            <button type="submit" class="btn btn-primary" style="padding: 0.875rem 2rem; font-size: 1rem;">
+                Завершить установку →
+            </button>
+        </form>
+    </div>
+    {% else %}
+    <div class="install-card success" style="text-align: center; padding: 3rem 2rem;">
+        <div style="font-size: 4rem; margin-bottom: 1rem;"></div>
+        <h2 style="color: var(--teal-light); margin-bottom: 1rem;">Поздравляем!</h2>
+        <p style="color: var(--silver); font-size: 1.125rem; margin-bottom: 2rem;">
+            Сайт успешно установлен и готов к работе.
+        </p>
+
+        <div style="background: var(--dark-blue); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; text-align: left;">
+            <h3 style="color: var(--teal-light); margin-bottom: 1rem; font-size: 1rem;">Что было сделано:</h3>
+            <ul style="color: var(--silver); margin-left: 1.5rem; line-height: 1.8;">
+                <li>✅ Проверено подключение к базе данных</li>
+                <li>✅ Созданы все необходимые таблицы</li>
+                <li>✅ Добавлены начальные данные (страницы, меню, схема)</li>
+                <li>✅ Настроен базовый URL сайта</li>
+                <li>✅ Создан файл-маркер установки</li>
+            </ul>
+        </div>
+
+        <div style="background: rgba(220, 53, 69, 0.1); border: 1px solid var(--red); border-radius: 8px; padding: 1rem; margin-bottom: 2rem; text-align: left;">
+            <p style="color: var(--red); font-size: 0.875rem; margin: 0;">
+                ⚠️ <strong>Важно:</strong> Для входа в админ-панель используйте данные супер-администратора из файла <code>config.env</code>:
+            </p>
+            <p style="color: var(--silver); font-size: 0.875rem; margin: 0.5rem 0 0 0;">
+                Email: <code style="color: var(--teal-light);">admin@usyplenie.103vet.by</code>
+            </p>
+        </div>
+
+        <div class="form-actions" style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+            <a href="/admin/login" class="btn btn-primary" style="padding: 0.875rem 2rem; font-size: 1rem;">
+                Войти в админ-панель →
+            </a>
+            <a href="/" class="btn" style="background: var(--dark-blue); color: var(--silver); border: 1px solid var(--border-color); padding: 0.875rem 2rem; font-size: 1rem;" target="_blank">
+                Открыть сайт
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+<?php $__template->endSection('content'); ?>

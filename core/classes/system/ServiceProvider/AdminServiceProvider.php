@@ -43,6 +43,13 @@ use Core\Module\Admin\Controllers\ImportController;
 use Core\Module\Admin\Services\HtmlImportParser;
 use Core\Module\Admin\Controllers\MenuController;
 use Core\Module\Admin\Services\MenuAdminService;
+use Core\Module\Admin\Controllers\SchemaController;
+use Core\Module\Admin\Controllers\SettingsController;
+use Core\Module\Admin\Controllers\ConfigViewerController;
+use Core\Module\Admin\Services\SchemaService;
+use Core\Module\Admin\Services\SettingsService;
+use Core\Module\Admin\Services\ConfigFileParser;
+use Core\System\Session\SessionManager;
 
 class AdminServiceProvider extends ServiceProvider
 {
@@ -77,6 +84,55 @@ class AdminServiceProvider extends ServiceProvider
         );
         $this->container->singleton(MenuAdminService::class, fn() =>
             new MenuAdminService($db)
+        );
+
+        // Schema.org: глобальные схемы + AJAX-привязка к страницам.
+        $this->container->singleton(SchemaService::class, fn() =>
+            new SchemaService($db)
+        );
+
+        // Настройки движка (редактирование config.env через UI супер-админа).
+        $this->container->singleton(SettingsService::class, fn() =>
+            new SettingsService(
+                $this->container->get(Config::class),
+                $this->container->get(SecurityManager::class),
+                $db
+            )
+        );
+
+        $this->container->singleton(ConfigFileParser::class, fn() =>
+            new ConfigFileParser(
+                $this->container->get(Config::class),
+                $this->container->get(SecurityManager::class)
+            )
+        );
+
+        // Контроллеры как синглтоны DI — зависимости разрешаются контейнером.
+        $this->container->singleton(SchemaController::class, fn() =>
+            new SchemaController(
+                $this->container->get(SchemaService::class),
+                $this->container->get(AdminService::class),
+                $this->container->get(Template::class),
+                $this->container->get(SecurityManager::class)
+            )
+        );
+
+        $this->container->singleton(SettingsController::class, fn() =>
+            new SettingsController(
+                $this->container->get(SettingsService::class),
+                $this->container->get(AdminService::class),
+                $this->container->get(Template::class),
+                $this->container->get(SecurityManager::class)
+            )
+        );
+
+        $this->container->singleton(ConfigViewerController::class, fn() =>
+            new ConfigViewerController(
+                $this->container->get(ConfigFileParser::class),
+                $this->container->get(AdminService::class),
+                $this->container->get(Template::class),
+                $this->container->get(SecurityManager::class)
+            )
         );
     }
 
@@ -133,6 +189,12 @@ class AdminServiceProvider extends ServiceProvider
             $container->get(MenuAdminService::class),
             $container->get(Template::class),
             $container->get(SecurityManager::class)
+        );
+
+        $dashboardController = static fn(): DashboardController => new DashboardController(
+            $container->get(AdminService::class),
+            $container->get(Template::class),
+            $container->get(SessionManager::class)
         );
 
         // Критическая защита мастера установки: доступ только по ключу
@@ -211,13 +273,8 @@ class AdminServiceProvider extends ServiceProvider
             $container->get(SecurityManager::class)
         ));
 
-        $admin->get('/', function (Request $request) use ($container): Response {
-            $controller = new DashboardController(
-                $container->get(AdminService::class),
-                $container->get(Template::class)
-            );
-            return $controller->index($request);
-        })->name('admin.dashboard');
+        $admin->get('/', fn(Request $request): Response => $dashboardController()->index($request))
+            ->name('admin.dashboard');
 
         // ─── CRUD страниц ───
         $admin->get('/pages', function (Request $request) use ($pagesController): Response {
@@ -283,5 +340,33 @@ class AdminServiceProvider extends ServiceProvider
         $admin->post('/menu/items/{id}/delete', function (Request $request) use ($menuController): Response {
             return $menuController()->destroy($request);
         })->name('admin.menu.delete');
+
+        // ─── Настройки (редактирование config.env, супер-админ) ───
+        $admin->get('/settings', fn(Request $request): Response => $container->get(SettingsController::class)->index($request))
+            ->name('admin.settings.index');
+        $admin->post('/settings', fn(Request $request): Response => $container->get(SettingsController::class)->update($request))
+            ->name('admin.settings.update');
+        $admin->post('/settings/rebuild-seed', fn(Request $request): Response => $container->get(SettingsController::class)->rebuildSeed($request))
+            ->name('admin.settings.rebuild-seed');
+
+        // ─── Управление Schema.org (глобальные схемы) ───
+        $admin->get('/schema', fn(Request $request): Response => $container->get(SchemaController::class)->index($request))
+            ->name('admin.schema.index');
+        $admin->get('/schema/new', fn(Request $request): Response => $container->get(SchemaController::class)->create($request))
+            ->name('admin.schema.create');
+        $admin->post('/schema/store', fn(Request $request): Response => $container->get(SchemaController::class)->store($request))
+            ->name('admin.schema.store');
+        $admin->get('/schema/{id}/edit', fn(Request $request): Response => $container->get(SchemaController::class)->edit($request))
+            ->name('admin.schema.edit')->where('id', '\d+');
+        $admin->post('/schema/{id}/update', fn(Request $request): Response => $container->get(SchemaController::class)->update($request))
+            ->name('admin.schema.update')->where('id', '\d+');
+        $admin->post('/schema/{id}/delete', fn(Request $request): Response => $container->get(SchemaController::class)->destroy($request))
+            ->name('admin.schema.delete')->where('id', '\d+');
+
+        // ─── Просмотр/редактирование config.env напрямую (только супер-админ) ───
+        $admin->get('/config', fn(Request $request): Response => $container->get(ConfigViewerController::class)->index($request))
+            ->name('admin.config.index');
+        $admin->post('/config', fn(Request $request): Response => $container->get(ConfigViewerController::class)->save($request))
+            ->name('admin.config.save');
     }
 }

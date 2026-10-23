@@ -38,13 +38,7 @@
                 <?php foreach ($pages as $page): ?>
                 <tr>
                     <td><?php echo htmlspecialchars((string) ($page['title']), ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td>
-						<?php if ($page['slug'] === ''): ?>
-							<span class="badge badge-success">Главная</span>
-						<?php else: ?>
-							<code><?php echo htmlspecialchars((string) ($page['slug']), ENT_QUOTES, 'UTF-8'); ?></code>
-						<?php endif; ?>
-				</td>
+                    <td><code><?php echo htmlspecialchars((string) ($page['slug']), ENT_QUOTES, 'UTF-8'); ?></code></td>
                     <td><?php echo htmlspecialchars((string) ($page['author_name'] ?? '—'), ENT_QUOTES, 'UTF-8'); ?></td>
                     <td>
                         <?php if ($page['status'] == 'published'): ?>

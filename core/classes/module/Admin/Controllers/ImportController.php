@@ -68,6 +68,26 @@ class ImportController
      * Обработка импортированного контента перед сохранением.
      * Режим берётся из config/page-content.php ('content_mode'), как и в
      * PagesController: 'sanitize' — HtmlSanitizer::clean(), 'raw' — без изменений.
+     * Побитный импорт (config/import-parser.php 'content_raw' => true): срез
+     * исходника сохраняется байт-в-байт — без снятия обёртки и санитизации.
+     */
+    private function prepareImportedContent(string $html, bool $rawSlice = false): string
+    {
+        if ($rawSlice) {
+            $rulesFile = dirname(__DIR__, 4) . '/config/import-parser.php';
+            $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
+            if (($rules['content_raw'] ?? false) === true) {
+                return $html;
+            }
+        }
+
+        return $this->sanitizeImportedContent($this->parser->stripDocumentWrapper($html));
+    }
+
+    /**
+     * Обработка импортированного контента перед сохранением.
+     * Режим берётся из config/page-content.php ('content_mode'), как и в
+     * PagesController: 'sanitize' — HtmlSanitizer::clean(), 'raw' — без изменений.
      */
     private function sanitizeImportedContent(string $html): string
     {
@@ -222,7 +242,7 @@ class ImportController
             // Контент импорта прогоняется через тот же санитайзер, что и ручное
             // сохранение страниц (config/page-content.php: content_mode) —
             // импорт чужого HTML не должен приносить stored-XSS в БД.
-            'content' => $this->sanitizeImportedContent($this->parser->stripDocumentWrapper((string)$parsed['content'])),
+            'content' => $this->prepareImportedContent((string) ($parsed['blocks']['main_content']['value'] ?? $parsed['content']), (bool) (($parsed['blocks']['main_content']['meta']['marker'] ?? '') === 'raw_slice')),
             'status' => 'draft',
             'page_type' => 'article',
             'meta_robots' => 'index, follow',
@@ -257,7 +277,8 @@ class ImportController
                 continue;
             }
             if ($column === 'content') {
-                $value = $this->sanitizeImportedContent($this->parser->stripDocumentWrapper((string) $value));
+                $isRawSlice = ((string) ($parsed['blocks'][$name]['meta']['marker'] ?? '')) === 'raw_slice';
+                $value = $this->prepareImportedContent((string) $value, $isRawSlice);
             } elseif (!is_string($value)) {
                 $value = (string) $value;
             }
