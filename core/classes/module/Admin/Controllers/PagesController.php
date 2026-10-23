@@ -29,7 +29,6 @@ use Core\System\Http\Response;
 use Core\System\Security\HtmlSanitizer;
 use Core\System\Security\SecurityManager;
 use Core\System\Template\Template;
-use Core\System\Http\StatusCode;
 
 class PagesController
 {
@@ -115,12 +114,6 @@ class PagesController
             'authors' => $authors,
             'flash' => $flash,
             'csrf_token' => $this->csrfToken(),
-            'csrf_meta' => $this->security->getCsrfToken()->getMetaTag(),
-            // Schema.org: для новой страницы (page_id ещё нет) передаём пустые массивы.
-            // UI покажет: "Схемы можно добавить после сохранения страницы".
-            'schemas'      => [],
-            'schema_types' => $this->pageService->getAllowedSchemaTypes(),
-            'schema_taken' => [],
         ]);
 
         return Response::html($html);
@@ -187,11 +180,6 @@ class PagesController
             'authors' => $authors,
             'flash' => $flash,
             'csrf_token' => $this->csrfToken(),
-            'csrf_meta' => $this->security->getCsrfToken()->getMetaTag(),
-            // Schema.org: привязанные к странице схемы + whitelist типов + занятые типы.
-            'schemas'      => $this->pageService->getSchemasForPage($id),
-            'schema_types' => $this->pageService->getAllowedSchemaTypes(),
-            'schema_taken' => $this->pageService->getTakenSchemaTypes($id),
         ]);
 
         return Response::html($html);
@@ -261,146 +249,5 @@ class PagesController
         $this->adminService->setFlash('success', 'Страница удалена');
 
         return Response::redirect('/admin/pages');
-    }
-
-        // ═══════════════════════════════════════════════════════════════
-    // Schema.org — AJAX CRUD для схем, привязанных к странице
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * GET /admin/pages/{id}/schemas — список схем страницы.
-     *
-     * Отдаёт сами схемы, разрешённые типы и уже занятые типы, чтобы
-     * UI сразу заблокировал недоступные опции (UNIQUE KEY page_id+type).
-     */
-    public function schemas(Request $request): Response
-    {
-        $pageId = (int) $request->getAttribute('id');
-        $page = $this->pageService->getPage($pageId);
-        if ($page === null) {
-            return $this->jsonError('Страница не найдена.', StatusCode::NOT_FOUND);
-        }
-
-        return Response::json([
-            'ok'            => true,
-            'schemas'       => $this->pageService->getSchemasForPage($pageId),
-            'allowed_types' => $this->pageService->getAllowedSchemaTypes(),
-            'taken_types'   => $this->pageService->getTakenSchemaTypes($pageId),
-        ]);
-    }
-
-    /**
-     * POST /admin/pages/{id}/schemas — создать схему.
-     */
-    public function schemaStore(Request $request): Response
-    {
-        $pageId = (int) $request->getAttribute('id');
-        $payload = $this->readSchemaPayload($request);
-        $result = $this->pageService->createSchemaForPage($pageId, $payload);
-
-        return $this->schemaResponse($result, $pageId, 'Схема создана.');
-    }
-
-    /**
-     * POST /admin/pages/{id}/schemas/{schemaId} — обновить схему.
-     */
-    public function schemaUpdate(Request $request): Response
-    {
-        $pageId = (int) $request->getAttribute('id');
-        $schemaId = (int) $request->getAttribute('schemaId');
-        $payload = $this->readSchemaPayload($request);
-        $result = $this->pageService->updateSchema($schemaId, $pageId, $payload);
-
-        return $this->schemaResponse($result, $pageId, 'Схема обновлена.');
-    }
-
-    /**
-     * POST /admin/pages/{id}/schemas/{schemaId}/delete — удалить схему.
-     */
-    public function schemaDelete(Request $request): Response
-    {
-        $pageId = (int) $request->getAttribute('id');
-        $schemaId = (int) $request->getAttribute('schemaId');
-        $result = $this->pageService->deleteSchema($schemaId, $pageId);
-
-        if (!$result['ok']) {
-            return $this->jsonError(implode(' ', $result['errors']), StatusCode::BAD_REQUEST);
-        }
-
-        $this->security->getAuditLogger()->logAction('page_schema.delete', 'schema', (string) $schemaId, [
-            'page_id' => $pageId,
-        ]);
-
-        return Response::json([
-            'ok'          => true,
-            'message'     => 'Схема удалена.',
-            'taken_types' => $this->pageService->getTakenSchemaTypes($pageId),
-        ]);
-    }
-
-    /**
-     * Прочитать payload схемы из запроса.
-     *
-     * Поддерживает и JSON-тело (fetch + Content-Type: application/json),
-     * и обычную форму — на случай деградации JS.
-     *
-     * @return array<string, mixed>
-     */
-    private function readSchemaPayload(Request $request): array
-    {
-        $raw = $request->isJson() ? $request->getParsedBody() : $request->allPost();
-        if (!is_array($raw)) {
-            $raw = [];
-        }
-
-        // data может прийти и как объект (JSON), и как строка (форма) —
-        // нормализацию и валидацию JSON делает сервис.
-        return [
-            'schema_type' => (string) ($raw['schema_type'] ?? ''),
-            'data'        => $raw['data'] ?? null,
-            'priority'    => $raw['priority'] ?? 10,
-            'is_active'   => $raw['is_active'] ?? 1,
-        ];
-    }
-
-    /**
-     * Единый формат ответа для create/update схемы + аудит-запись.
-     *
-     * @param array{ok: bool, errors: string[], schema?: array<string, mixed>} $result
-     */
-    private function schemaResponse(array $result, int $pageId, string $okMessage): Response
-    {
-        if (!$result['ok']) {
-            return $this->jsonError(implode(' ', $result['errors']), StatusCode::BAD_REQUEST);
-        }
-
-        // Безопасное извлечение схемы (защита от warning при null)
-        $schema = $result['schema'] ?? null;
-        if ($schema === null) {
-            return $this->jsonError('Схема не найдена после сохранения.', StatusCode::INTERNAL_SERVER_ERROR);
-        }
-
-        $this->security->getAuditLogger()->logAction('page_schema.save', 'schema', (string) ($schema['id'] ?? ''), [
-            'page_id'     => $pageId,
-            'schema_type' => $schema['schema_type'] ?? null,
-        ]);
-
-        return Response::json([
-            'ok'          => true,
-            'message'     => $okMessage,
-            'schema'      => $schema,
-            'taken_types' => $this->pageService->getTakenSchemaTypes($pageId),
-        ]);
-    }
-
-    /**
-     * JSON-ответ об ошибке с корректным статусом.
-     */
-    private function jsonError(string $message, StatusCode $status): Response
-    {
-        return Response::json([
-            'ok'     => false,
-            'errors' => [$message],
-        ], $status);
     }
 }

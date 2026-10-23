@@ -425,71 +425,51 @@ class InstallService
     }
 
     public function seedInitialData(array $dbConfig): array
-{
-    $pdo = null;
-    try {
-        $pdo = $this->getPdo($dbConfig);
-        $baseUrl = rtrim($dbConfig['base_url'] ?? 'https://localhost', '/');
-        $appName = $this->config->get('APP_NAME', 'VampqweEngine');
+    {
+        $pdo = null;
+        try {
+            $pdo = $this->getPdo($dbConfig);
+            $baseUrl = rtrim($dbConfig['base_url'] ?? 'https://localhost', '/');
+            $pdo->beginTransaction();
 
-        $pdo->beginTransaction();
+            $pdo->prepare("INSERT IGNORE INTO authors (name, slug, bio, is_active) VALUES (?, ?, ?, 1)")->execute([
+                'Команда ветеринарных врачей 103vet', 'komanda-103vet',
+                'Специализация: паллиативная помощь и оценка качества жизни домашних животных',
+            ]);
 
-        // 1. Создаём автора и получаем его реальный ID
-        $pdo->prepare("INSERT IGNORE INTO authors (name, slug, bio, is_active) VALUES (?, ?, ?, 1)")->execute([
-            'Команда ветеринарных врачей 103vet', 'komanda-103vet',
-            'Специализация: паллиативная помощь и оценка качества жизни домашних животных',
-        ]);
+            $pdo->prepare("INSERT IGNORE INTO pages (title, description, keywords, canonical, og_title, og_description, meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, page_type, parent_id, status, sort_order, is_in_menu, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([
+                'Ветеринарная клиника в Минске - Достойный уход', 'Круглосуточная ветеринарная помощь в Минске.', null, $baseUrl . '/',
+                'Достойный уход — ветеринарная клиника в Минске', 'Профессиональная ветеринарная помощь 24/7', 'index, follow', null, null, 0, 1, '',
+                '<h1>Главная</h1><p>Добро пожаловать на сайт ветеринарной клиники "Достойный уход".</p>', null, 'home', null, 'published', 0, 1, date('Y-m-d H:i:s'),
+            ]);
 
-        // Получаем реальный ID автора (не захардкоженный 1)
-        $authorId = (int) $pdo->query("SELECT id FROM authors WHERE slug = 'komanda-103vet' LIMIT 1")->fetchColumn();
-        if ($authorId === 0) {
-            throw new \RuntimeException('Не удалось создать или найти автора по умолчанию');
+            $pdo->prepare("INSERT IGNORE INTO pages (title, description, keywords, canonical, og_title, og_description, meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, page_type, parent_id, status, sort_order, is_in_menu, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([
+                '404 - Страница не найдена', 'Запрашиваемая страница не существует.', null, $baseUrl . '/404',
+                '404 - Страница не найдена', 'Запрашиваемая страница не существует.', 'noindex, nofollow', null, null, 0, 1, '404',
+                '<h1>Страница не найдена</h1><p>К сожалению, запрашиваемая страница не существует или была перемещена.</p>', null, '404', null, 'published', 0, 0, date('Y-m-d H:i:s'),
+            ]);
+
+            $pdo->prepare("INSERT IGNORE INTO pages (title, description, keywords, canonical, og_title, og_description, meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, page_type, parent_id, status, sort_order, is_in_menu, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([
+                '500 - Ошибка сервера', 'Внутренняя ошибка сервера.', null, $baseUrl . '/500',
+                '500 - Ошибка сервера', 'Внутренняя ошибка сервера.', 'noindex, nofollow', null, null, 0, 1, '500',
+                '<h1>Ошибка сервера</h1><p>Произошла внутренняя ошибка сервера. Пожалуйста, попробуйте позже.</p>', null, '500', null, 'published', 0, 0, date('Y-m-d H:i:s'),
+            ]);
+
+            $pdo->prepare("INSERT IGNORE INTO schema_org (page_id, route, schema_type, data, priority, is_active) VALUES (?, ?, ?, ?, ?, 1)")->execute([
+                null, '*', 'VeterinaryCare', json_encode(['name' => 'Достойный уход', 'description' => 'Ветеринарная клиника в Минске', 'url' => $baseUrl], JSON_UNESCAPED_UNICODE), 100,
+            ]);
+
+            $pdo->prepare("INSERT IGNORE INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Главная', '/', 1, 10, null, null, null]);
+            $pdo->prepare("INSERT IGNORE INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Поддержка собак', '/sobaki/', null, 20, null, null, null]);
+            $pdo->prepare("INSERT IGNORE INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Поддержка кошек', '/koshki/', null, 30, null, null, null]);
+
+            $pdo->commit();
+            return ['success' => true, 'message' => 'Начальные данные успешно добавлены'];
+        } catch (Throwable $e) {
+            if ($pdo !== null && $pdo->inTransaction()) $pdo->rollBack();
+            return ['success' => false, 'message' => 'Ошибка заполнения данных: ' . $e->getMessage()];
         }
-
-        // 2. Главная страница
-        $stmt = $pdo->prepare("INSERT INTO pages (title, description, keywords, canonical, og_title, og_description, meta_robots, og_image, reading_time, views_count, author_id, slug, content, scripts, page_type, parent_id, status, sort_order, is_in_menu, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $appName, 'Главная страница сайта', null, $baseUrl . '/',
-            $appName, 'Добро пожаловать на наш сайт', 'index, follow', null, null, 0, $authorId, '',
-            '<h1>Главная</h1><p>Добро пожаловать на сайт "' . htmlspecialchars($appName, ENT_QUOTES, 'UTF-8') . '".</p>', null, 'home', null, 'published', 0, 1, date('Y-m-d H:i:s'),
-        ]);
-        $homePageId = (int) $pdo->lastInsertId();
-
-        // 3. Страница 404
-        $stmt->execute([
-            '404 - Страница не найдена', 'Запрашиваемая страница не существует.', null, $baseUrl . '/404',
-            '404 - Страница не найдена', 'Запрашиваемая страница не существует.', 'noindex, nofollow', null, null, 0, $authorId, '404',
-            '<h1>Страница не найдена</h1><p>К сожалению, запрашиваемая страница не существует или была перемещена.</p>', null, '404', null, 'published', 0, 0, date('Y-m-d H:i:s'),
-        ]);
-
-        // 4. Страница 500
-        $stmt->execute([
-            '500 - Ошибка сервера', 'Внутренняя ошибка сервера.', null, $baseUrl . '/500',
-            '500 - Ошибка сервера', 'Внутренняя ошибка сервера.', 'noindex, nofollow', null, null, 0, $authorId, '500',
-            '<h1>Ошибка сервера</h1><p>Произошла внутренняя ошибка сервера. Пожалуйста, попробуйте позже.</p>', null, '500', null, 'published', 0, 0, date('Y-m-d H:i:s'),
-        ]);
-
-        // 5. Schema.org (используем реальный appName)
-        $pdo->prepare("INSERT INTO schema_org (page_id, route, schema_type, data, priority, is_active) VALUES (?, ?, ?, ?, ?, 1)")->execute([
-            null, '*', 'Organization', json_encode(['name' => $appName, 'url' => $baseUrl], JSON_UNESCAPED_UNICODE), 100,
-        ]);
-
-        // 6. Меню (привязываем к реальной главной странице)
-        $pdo->prepare("INSERT INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Главная', '/', $homePageId, 10, null, null, null]);
-        $pdo->prepare("INSERT INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Поддержка собак', '/sobaki/', null, 20, null, null, null]);
-        $pdo->prepare("INSERT INTO menu_items (parent_id, title, url, page_id, sort_order, is_visible, is_external, css_class, icon, note) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)")->execute([null, 'Поддержка кошек', '/koshki/', null, 30, null, null, null]);
-
-        $pdo->commit();
-        return ['success' => true, 'message' => 'Начальные данные успешно добавлены'];
-    } catch (Throwable $e) {
-        if ($pdo !== null && $pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        // Логируем полную ошибку для диагностики
-        error_log('seedInitialData failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-        return ['success' => false, 'message' => 'Ошибка заполнения данных: ' . $e->getMessage()];
     }
-}
 
     public function markAsInstalled(array $dbConfig): void
     {
@@ -738,15 +718,4 @@ class InstallService
 
         return ['changed' => true, 'message' => 'config.env приведён к политике MySQL (SQLite-параметры удалены)'];
     }
-
-        /**
-         * Генерация slug из строки (транслитерация + lowercase)
-         */
-        private function generateSlug(string $text): string
-        {
-            $slug = mb_strtolower($text, 'UTF-8');
-            $slug = preg_replace('/[^a-z0-9\s-]/u', '', $slug);
-            $slug = preg_replace('/[\s-]+/', '-', $slug);
-            return trim($slug, '-');
-        }
 }

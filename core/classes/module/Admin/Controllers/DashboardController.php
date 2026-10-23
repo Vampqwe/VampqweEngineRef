@@ -1,6 +1,24 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * VampqweEngineMedium — проприетарный PHP-движок
+ *
+ * @copyright  Copyright (c) 2024-2026. Все права защищены.
+ * @author     [Дедюля Александр Иванович / VampqweEngine]
+ * @license    Proprietary
+ * @link       https://github.com/Vampqwe/VampqweEngine.git
+ * @contact      Указывается в LICENSE-файле дистрибутива
+ *
+ * Данный код является интеллектуальной собственностью автора.
+ * Любое копирование, распространение, модификация или использование
+ * без письменного разрешения правообладателя строго запрещено.
+ *
+ * This software is proprietary and confidential.
+ * Unauthorized copying, distribution, or use is strictly prohibited.
+ */
+
+
 namespace Core\Module\Admin\Controllers;
 
 use Core\Module\Admin\Services\AdminService;
@@ -8,20 +26,21 @@ use Core\System\Http\Request;
 use Core\System\Http\Response;
 use Core\System\Session\SessionManager;
 use Core\System\Template\Template;
-use Core\System\Security\SecurityManager;
 
 class DashboardController
 {
+    private AdminService $adminService;
+    private Template $template;
+    private SessionManager $session;
+
     public function __construct(
-        private AdminService $adminService,
-        private Template $template,
-        private SecurityManager $security,          // 3-й аргумент: обязательный
-        private ?SessionManager $session = null     // 4-й аргумент: опциональный
+        AdminService $adminService,
+        Template $template,
+        ?SessionManager $session = null
     ) {
-        // Если SessionManager не передан через DI, создаём fallback (на всякий случай)
-        if ($this->session === null) {
-            $this->session = new SessionManager();
-        }
+        $this->adminService = $adminService;
+        $this->template = $template;
+        $this->session = $session ?? new SessionManager();
     }
 
     public function index(Request $request): Response
@@ -39,7 +58,6 @@ class DashboardController
             'recentActivity' => $recentActivity,
             'flash' => $flash,
             'user' => $user,
-            'csrf_token' => $this->security->getCsrfToken()->getToken(), // ← Это починит кнопку "Выйти"
         ]);
 
         return Response::html($html);

@@ -188,12 +188,12 @@ class Template
             return '';
         }
 
-        // Defense-in-depth: контент из БД может содержать XSS-векторы (импорт,
-        // ручной редактор) — прогоняем через HtmlSanitizer::cleanAsIs(): все теги
-        // (<svg viewBox>, <style>, <script>) сохраняются побайтно, вырезаются
-        // только on*-обработчики, опасные URL-схемы и CSS-векторы. Обычный
-        // clean() удалял style/script/svg вместе с содержимым и ломал импорты.
-        $content = \Core\System\Security\HtmlSanitizer::cleanAsIs($content);
+        // Defense-in-depth: контент из БД может быть сохранён в режиме
+        // content_mode='raw' (или до появления санитизации) — прогоняем
+        // через HtmlSanitizer перед выводом посетителям. Правила —
+        // config/html-sanitizer.php. Nonce-обработка ниже остаётся для
+        // легитимных inline-скриптов шаблонов.
+        $content = \Core\System\Security\HtmlSanitizer::clean($content);
 
         $wrapperId = 'trusted-content-' . bin2hex(random_bytes(8));
         $document = new \DOMDocument('1.0', 'UTF-8');

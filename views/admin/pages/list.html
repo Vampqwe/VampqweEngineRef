@@ -38,13 +38,7 @@
                 @foreach(pages as page)
                 <tr>
                     <td>{{ page.title }}</td>
-                    <td>
-						@if(page.slug === '')
-							<span class="badge badge-success">Главная</span>
-						@else
-							<code>{{ page.slug }}</code>
-						@endif
-				</td>
+                    <td><code>{{ page.slug }}</code></td>
                     <td>{{ page.author_name ?? '—' }}</td>
                     <td>
                         @if(page.status == 'published')

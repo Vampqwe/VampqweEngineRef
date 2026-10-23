@@ -25,12 +25,12 @@ use Core\Module\Auth\Services\SuperAdminAuth;
 use Core\Module\Admin\Services\AdminService;
 use Core\System\Config\Config;
 use Core\System\DataBase\DataBase;
-use Core\System\Http\StatusCode;
-use Core\System\Security\SecurityManager;
-use Core\System\Template\Template;
-use Core\System\Session\SessionManager;
 use Core\System\Http\Request;
 use Core\System\Http\Response;
+use Core\System\Http\StatusCode;
+use Core\System\Security\SecurityManager;
+use Core\System\Session\SessionManager;
+use Core\System\Template\Template;
 
 class AuthController
 {

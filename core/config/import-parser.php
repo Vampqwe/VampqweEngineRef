@@ -23,10 +23,8 @@ return [
     // Подкаталог storage для загруженных файлов импорта.
     'upload_dir' => 'uploads/import',
 
-    // NB: промежуточные neutral-style.css / neutral-js.js УПРАЗДНЕНЫ —
-    // стили (<style>) и инлайн-скрипты (<script>) сохраняются внутри
-    // контента страницы как есть и защищаются при отдаче через
-    // HtmlSanitizer::cleanPreserveAssets() + CSP nonce в шаблонизаторе.
+    // Файл промежуточных стилей в storage (относительный путь).
+    'styles_file' => 'neutral-style.css',
 
     // Максимум редиректов при скачивании изображений.
     'image_max_redirects' => 3,
@@ -57,10 +55,7 @@ return [
      *  - 'fallback_xpath': (marker) если маркеры не найдены — взять узел по XPath.
      *  - 'required'     : true — отсутствие содержимого блока = ошибка импорта.
      *  - 'strip_wrapper': (marker/xpath) снимать ли служебную обёртку <!DOCTYPE/html/head/body>.
-     *  - 'preserve_raw' : (marker) байт-в-байт срез между маркерами в БД, без
-     *                     DOM round-trip; иначе libxml приводит атрибуты к
-     *                     нижнему регистру (viewBox → viewbox) и разворачивает
-     *                     самозакрывающиеся теги SVG (<path/> → <path></path>).
+     *  - 'collect_styles': (marker/xpath) уносить ли <style> из блока в neutral-style.css.
      *  - 'download_images': (marker/xpath) скачивать ли внешние <img> из блока.
      *  - 'target'       : куда писать:
      *        ['table' => 'pages', 'column' => 'content']            — обычная колонка;
@@ -111,12 +106,9 @@ return [
             // Fallback, если маркеры не найдены:
             'fallback_xpath' => '(//main | //article | //[@id="content"])[1]',
             'strip_wrapper'  => true,
+            'collect_styles' => true,
             'download_images' => true,
             'verify_integrity' => true,
-            // Контент в БД попадает ПОБАЙТНО как есть: без DOM round-trip,
-            // иначе libxml принудительно строчные атрибуты (viewbox вместо
-            // viewBox) и разворачивает самозакрытие SVG (<path/> → <path></path>).
-            'preserve_raw' => true,
             'required' => true,
             'target'   => ['table' => 'pages', 'column' => 'content'],
         ],
@@ -150,9 +142,6 @@ return [
             'target' => ['table' => 'pages', 'column' => 'scripts', 'mode' => 'json_array'],
             'default' => ['/assets/js/main.js'],
         ],
-
-        // Инлайн-JS страницы остаётся внутри контента как есть (<script>-теги
-        // между маркерами); отдельный блок для него не требуется.
     ],
 
     /**
