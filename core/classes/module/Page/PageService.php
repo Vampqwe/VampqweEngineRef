@@ -152,12 +152,24 @@ class PageService
     /**
      * Увеличить счетчик просмотров.
      *
-     * Троттлинг «страница+IP» (config/page-content.php: views): раньше
-     * каждый GET выполнял UPDATE в БД, что позволяло ботам раздувать
-     * счётчик и создавать гонку обновлений на горячей строке.
+     * Асинхронный режим (config/page-content.php: views.async, по умолчанию
+     * включён): просмотр пишется в дешёвый буфер (Redis либо файл в storage),
+     * а в БД значения списываются пакетно — одним UPDATE на пачку. Это
+     * снимает row-lock contention на горячей строке pages при росте трафика
+     * и делает троттлинг «страница+посетитель» устойчивым к ботам без сессий.
+     *
+     * @see ViewCounter
      */
     public function incrementViews(int $pageId): void
     {
+        $counter = $this->viewCounter();
+        if ($counter !== null) {
+            $counter->record($pageId);
+            return;
+        }
+
+        // Fallback (без конфигурации движка, напр. в изолированных тестах):
+        // прежний синхронный путь с сессионным троттлингом.
         /** @var array<string,mixed> $viewsCfg */
         $viewsCfg = (array) ($this->pageConfig('views') ?? []);
 
@@ -188,5 +200,29 @@ class PageService
         } catch (\Throwable $e) {
             error_log("Failed to increment views: {$e->getMessage()}");
         }
+    }
+
+    /**
+     * Асинхронный счётчик просмотров (создаётся лениво при доступном Config).
+     */
+    private function viewCounter(): ?ViewCounter
+    {
+        static $counter = null;
+        static $checked = false;
+
+        if ($checked) {
+            return $counter;
+        }
+        $checked = true;
+
+        try {
+            $config = \Core\System\Config\Config::getInstance();
+            $counter = new ViewCounter($this->db, $config);
+        } catch (\Throwable) {
+            // Config не инициализирован — остаёмся на синхронном пути.
+            $counter = null;
+        }
+
+        return $counter;
     }
 }
