@@ -441,7 +441,26 @@ class HtmlImportParser
             ? substr($html, $sliceStart)
             : substr($html, $sliceStart, $endPos - $sliceStart);
 
-        return trim((string) $slice);
+        // Если закрывающий маркер не найден — отсекаем хвост документа
+        // (footer и закрывающие теги), иначе мусор попадёт в БД.
+        if ($endPos === null) {
+            $slice = $this->trimUnclosedTail((string) $slice);
+        }
+
+        return trim($slice);
+    }
+
+    /**
+     * Отсекает хвост незакрытого блока: всё начиная с первого <footer>.
+     */
+    private function trimUnclosedTail(string $slice): string
+    {
+        $footerPos = stripos($slice, '<footer');
+        if ($footerPos !== false) {
+            $slice = substr($slice, 0, $footerPos);
+        }
+
+        return $slice;
     }
 
     /**
@@ -507,10 +526,7 @@ class HtmlImportParser
 
                     if ($endPos === null) {
                         $this->warnings[] = "Блок «{$name}»: закрывающий маркер не найден, берём до конца документа";
-                        $footerPos = stripos($raw, '<footer');
-                        if ($footerPos !== false) {
-                            $raw = substr($raw, 0, $footerPos);
-                        }
+                        $raw = $this->trimUnclosedTail((string) $raw);
                     }
 
                     // Отбрасываем закрывающие теги контейнеров, попавшие в начало среза
@@ -625,6 +641,9 @@ class HtmlImportParser
             $raw = $endPos === null
                 ? substr($sourceHtml, $startPos)
                 : substr($sourceHtml, $startPos, $endPos - $startPos);
+            if ($endPos === null) {
+                $raw = $this->trimUnclosedTail((string) $raw);
+            }
             return [$raw, trim($raw) !== ''];
         }
 
