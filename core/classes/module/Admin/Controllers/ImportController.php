@@ -66,9 +66,7 @@ class ImportController
     /**
      * Обработка импортированного контента перед сохранением.
      * Режим берётся из config/page-content.php ('content_mode'), как и в
-     * PagesController: 'sanitize' — очистка с СОХРАНЕНИЕМ <style>/<script>/
-     * <svg> побайтно (cleanAsIs: вырезаются только on*-атрибуты, опасные
-     * URL-схемы и CSS-векторы), 'raw' — без изменений.
+     * PagesController: 'sanitize' — HtmlSanitizer::clean(), 'raw' — без изменений.
      */
     private function sanitizeImportedContent(string $html): string
     {
@@ -80,7 +78,7 @@ class ImportController
             $html = mb_substr($html, 0, $maxLen);
         }
 
-        return $mode === 'raw' ? $html : HtmlSanitizer::cleanAsIs($html);
+        return $mode === 'raw' ? $html : HtmlSanitizer::clean($html);
     }
 
     public function index(Request $request): Response
@@ -289,9 +287,12 @@ class ImportController
             $this->pageService->addSchemaForPage($id, $parsed['schemas']);
         }
 
-        // NB: стили и инлайн-JS больше НЕ выносятся в neutral-файлы — они
-        // остаются внутри контента страницы (HtmlSanitizer::cleanPreserveAssets
-        // сохраняет <style>/<script> при отдаче).
+        // Стили из <style>-блоков пишутся в neutral-style.css только после подтверждения импорта
+        if (!empty($parsed['styles'])) {
+            if (!$this->parser->commitStyles($parsed['styles'])) {
+                $this->adminService->setFlash('warning', 'Не удалось записать стили в storage/neutral-style.css');
+            }
+        }
 
         $this->session->remove(self::PREVIEW_KEY);
 

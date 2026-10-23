@@ -193,33 +193,33 @@ class Map implements ArrayAccess, IteratorAggregate, Countable, JsonSerializable
     /**
      * @return self<int, TValue>
      */
-    public function values(): self
-    {
-        $values = array_values($this->items);
-
+	public function values(): self
+	{
+		$values = array_values($this->items);
+    
     // Гарантируем, что массив индексирован с 0
-        $result = [];
-        foreach ($values as $value) {
-            $result[] = $value;
+		$result = [];
+		foreach ($values as $value) {
+			$result[] = $value;
     }
-
-        return new self($result);
-    }
-
-    /**
+    
+		return new self($result);
+	}
+	
+	/**
  * Получить массив с гарантированной переиндексацией
  *
  * @return array<int, TValue>
  */
-    public function toIndexedArray(): array
-    {
-        $result = [];
-        foreach ($this->items as $value) {
-            $result[] = $value;
-        }
-        return $result;
-    }
-
+	public function toIndexedArray(): array
+	{
+		$result = [];
+		foreach ($this->items as $value) {
+			$result[] = $value;
+		}
+		return $result;
+	}
+	
     public function first(?Closure $callback = null, mixed $default = null): mixed
     {
         if ($callback === null) {
@@ -722,16 +722,16 @@ class Map implements ArrayAccess, IteratorAggregate, Countable, JsonSerializable
 
     // ─── Сериализация ───
 
-    public function toJson(int $options = JSON_UNESCAPED_UNICODE): string
-    {
+	public function toJson(int $options = JSON_UNESCAPED_UNICODE): string
+	{
     // Если ключи не последовательные — переиндексируем
-        $keys = array_keys($this->items);
-        $isSequential = $keys === range(0, count($keys) - 1);
-
-        $data = $isSequential ? $this->items : array_values($this->items);
-
-        return json_encode($data, $options | JSON_THROW_ON_ERROR);
-    }
+		$keys = array_keys($this->items);
+		$isSequential = $keys === range(0, count($keys) - 1);
+    
+		$data = $isSequential ? $this->items : array_values($this->items);
+    
+		return json_encode($data, $options | JSON_THROW_ON_ERROR);
+	}
 
     public function toString(): string
     {

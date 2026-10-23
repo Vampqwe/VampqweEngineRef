@@ -121,29 +121,29 @@ class Request
         return $this->uri;
     }
 
-    /**
-     * Получить путь URL (без query string и имени скрипта)
-     */
-    public function getPath(): string
-    {
-        // 1. Берем оригинальный URI (приоритет у REDIRECT_URL, так как это внутренний редирект Apache)
-        $uri = $_SERVER['REDIRECT_URL'] ?? $_SERVER['REQUEST_URI'] ?? '/';
-
-        // 2. Отрезаем query string (?foo=bar)
-        $path = parse_url($uri, PHP_URL_PATH) ?: '/';
-
-        // 3. ЖЁСТКО убираем /index.php из начала пути, если он там случайно появился
-        // Это частая особенность OSPanel при внутренних редиректах mod_rewrite
-        $path = preg_replace('#^/index\.php#i', '', $path);
-
-        // 4. Нормализуем слеши: всегда начинаем с /, убираем замыкающий (кроме корня)
-        $path = '/' . ltrim($path, '/');
-        if ($path !== '/' && str_ends_with($path, '/')) {
-            $path = rtrim($path, '/');
-        }
-
-        return $path;
-    }
+	/**
+	 * Получить путь URL (без query string и имени скрипта)
+	 */
+	public function getPath(): string
+	{
+		// 1. Берем оригинальный URI (приоритет у REDIRECT_URL, так как это внутренний редирект Apache)
+		$uri = $_SERVER['REDIRECT_URL'] ?? $_SERVER['REQUEST_URI'] ?? '/';
+		
+		// 2. Отрезаем query string (?foo=bar)
+		$path = parse_url($uri, PHP_URL_PATH) ?: '/';
+		
+		// 3. ЖЁСТКО убираем /index.php из начала пути, если он там случайно появился
+		// Это частая особенность OSPanel при внутренних редиректах mod_rewrite
+		$path = preg_replace('#^/index\.php#i', '', $path);
+		
+		// 4. Нормализуем слеши: всегда начинаем с /, убираем замыкающий (кроме корня)
+		$path = '/' . ltrim($path, '/');
+		if ($path !== '/' && str_ends_with($path, '/')) {
+			$path = rtrim($path, '/');
+		}
+		
+		return $path;
+	}
 
     public function getQueryString(): string
     {

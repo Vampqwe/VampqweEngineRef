@@ -123,15 +123,15 @@
                         $contentMode = is_array($contentCfg) ? (string) ($contentCfg['content_mode'] ?? 'sanitize') : 'sanitize';
                     ?>
 
-                            <!-- Единое поле: HTML-редактор (исходный код с подсветкой ссылок).
-                               Визуального WYSIWYG-редактора в сборке нет -->
-                            <textarea id="content" name="content" class="editor-textarea" rows="24" spellcheck="false" placeholder="<section class=&quot;section&quot;> ... </section>"><?= htmlspecialchars($rawContent, ENT_QUOTES, 'UTF-8') ?></textarea>
-                            <?php if ($contentMode === 'raw'): ?>
-                            <small>Режим «raw»: контент сохраняется в БД как есть — все теги, классы и inline-styles остаются без изменений.</small>
-                            <?php else: ?>
-                            <small>Режим «sanitize»: при сохранении контент проходит через HtmlSanitizer (недоверенные теги/атрибуты вырезаются), поэтому разметка может быть изменена.</small>
-                            <?php endif; ?>
-                        </div>
+                                                        <!-- Единое поле: HTML-редактор (исходный код с подсветкой ссылок).
+                                                             Визуального WYSIWYG-редактора в сборке нет -->
+                                                        <textarea id="content" name="content" class="editor-textarea" rows="24" spellcheck="false" placeholder="<section class=&quot;section&quot;> ... </section>"><?= htmlspecialchars($rawContent, ENT_QUOTES, 'UTF-8') ?></textarea>
+                                                        <?php if ($contentMode === 'raw'): ?>
+                                                        <small>Режим «raw»: контент сохраняется в БД как есть — все теги, классы и inline-styles остаются без изменений.</small>
+                                                        <?php else: ?>
+                                                        <small>Режим «sanitize»: при сохранении контент проходит через HtmlSanitizer (недоверенные теги/атрибуты вырезаются), поэтому разметка может быть изменена.</small>
+                                                        <?php endif; ?>
+                                                </div>
                 </div>
             </div>
 
@@ -187,121 +187,6 @@
             </div>
         </div>
     </div>
-        <!-- ═══════════════════════════════════════════════════════════════
-         SCHEMA.ORG РАЗМЕТКИ
-         ═══════════════════════════════════════════════════════════════ -->
-    <div class="card" id="schema-editor" style="margin-top: 1.5rem;">
-        <div class="card-header">
-            <h3 class="card-title">🔷 Schema.org разметки</h3>
-            <span class="badge badge-info" id="schema-count"><?= count($schemas ?? []) ?> шт.</span>
-        </div>
-        <div class="card-body">
-            <?php if ($page === null): ?>
-                <div class="schema-notice">
-                    <strong>ℹ️ Схемы можно добавить после сохранения страницы.</strong><br>
-                    Сохраните страницу один раз, затем вернитесь к редактированию — здесь появится возможность привязать Schema.org разметки (Article, FAQPage, BreadcrumbList и др.).
-                </div>
-            <?php else: ?>
-                <!-- Список текущих схем -->
-                <div id="schema-list" class="schema-list">
-                    <?php if (empty($schemas)): ?>
-                        <div class="schema-empty" id="schema-empty">
-                            <p>📭 Схемы пока не добавлены.</p>
-                            <p class="schema-hint">Нажмите «➕ Добавить схему», чтобы привязать разметку Schema.org к этой странице.</p>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($schemas as $schema): ?>
-                            <div class="schema-card" data-schema-id="<?= $schema['id'] ?>">
-                                <div class="schema-card-header">
-                                    <div class="schema-card-title">
-                                        <span class="schema-type-badge"><?= htmlspecialchars($schema['schema_type'], ENT_QUOTES, 'UTF-8') ?></span>
-                                        <?php if ($schema['is_active']): ?>
-                                            <span class="badge badge-success">активна</span>
-                                        <?php else: ?>
-                                            <span class="badge badge-warning">отключена</span>
-                                        <?php endif; ?>
-                                        <span class="schema-priority">приоритет: <?= (int)$schema['priority'] ?></span>
-                                    </div>
-                                    <div class="schema-card-actions">
-                                        <button type="button" class="btn btn-secondary btn-sm btn-edit-schema" data-schema-id="<?= $schema['id'] ?>" title="Редактировать">✏️</button>
-                                        <button type="button" class="btn btn-danger btn-sm btn-delete-schema" data-schema-id="<?= $schema['id'] ?>" title="Удалить">🗑️</button>
-                                    </div>
-                                </div>
-                                <div class="schema-card-preview">
-                                    <pre class="schema-json-preview"><?= htmlspecialchars(json_encode($schema['data'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), ENT_QUOTES, 'UTF-8') ?></pre>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
 
-                <!-- Кнопка добавления новой схемы -->
-                <div class="schema-actions">
-                    <button type="button" class="btn btn-primary btn-sm" id="btn-add-schema">➕ Добавить схему</button>
-                    <span class="schema-status" id="schema-status"></span>
-                </div>
-
-                <!-- Форма добавления/редактирования схемы (скрыта по умолчанию) -->
-                <div class="schema-form-wrapper" id="schema-form-wrapper" style="display: none;">
-                    <div class="card card-compact">
-                        <div class="card-header card-header-toggle">
-                            <h4 class="card-title" id="schema-form-title">Новая схема</h4>
-                            <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-schema">Отмена</button>
-                        </div>
-                        <div class="card-body">
-                            <input type="hidden" id="schema-id" value="">
-
-                            <div class="form-grid-2col">
-                                <div class="form-group">
-                                    <label for="schema-type">Тип схемы *</label>
-                                    <select id="schema-type">
-                                        <option value="">— выберите тип —</option>
-                                        <?php foreach ($schema_types ?? [] as $type): ?>
-                                            <option value="<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small>На одну страницу — не более одной схемы каждого типа.</small>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="schema-priority">Приоритет (0–1000)</label>
-                                    <input type="number" id="schema-priority" min="0" max="1000" value="10">
-                                    <small>Чем больше, тем выше в JSON-LD.</small>
-                                </div>
-
-                                <div class="form-group compact-full">
-                                    <label for="schema-data">Данные JSON *</label>
-                                    <textarea id="schema-data" rows="10" placeholder='{"headline": "Заголовок", "author": {"@type": "Person", "name": "Имя"}}'></textarea>
-                                    <small>Объект без полей <code>@context</code> и <code>@type</code> — они добавятся автоматически.</small>
-                                </div>
-                            </div>
-
-                            <div class="form-group checkbox" style="margin-top: 1rem;">
-                                <label>
-                                    <input type="checkbox" id="schema-active" checked>
-                                    Активна (выводится на странице)
-                                </label>
-                            </div>
-
-                            <div class="schema-form-actions">
-                                <button type="button" class="btn btn-success btn-sm" id="btn-save-schema">💾 Сохранить схему</button>
-                                <span class="schema-form-msg" id="schema-form-msg"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- JSON-данные для JS -->
-                <script id="schema-data-init" type="application/json">
-                <?= json_encode([
-                    'schemas' => $schemas ?? [],
-                    'allowed_types' => $schema_types ?? [],
-                    'taken_types' => $schema_taken ?? [],
-                    'page_id' => $page['id'] ?? 0
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
-                </script>
-            <?php endif; ?>
-        </div>
-    </div>
 </form>
 @endsection

@@ -34,8 +34,8 @@ use Core\System\ServiceProvider\ConfigServiceProvider;
 use Core\System\ServiceProvider\DataBaseServiceProvider;
 use Core\System\ServiceProvider\FileSystemServiceProvider;
 use Core\System\ServiceProvider\LoggerServiceProvider;
-use Core\System\ServiceProvider\PageServiceProvider;
-use Core\System\ServiceProvider\RouterServiceProvider;
+use Core\System\ServiceProvider\PageServiceProvider; 
+use Core\System\ServiceProvider\RouterServiceProvider;  
 use Core\System\ServiceProvider\SecurityServiceProvider;
 use Core\System\ServiceProvider\ServiceProvider;
 use Core\System\ServiceProvider\TimeDateServiceProvider;
@@ -214,17 +214,17 @@ class Application
     private function registerErrorHandler(): void
 {
     $logger = null;
-
+    
     try {
         $logger = $this->container->get(Logger::class);
     } catch (Throwable) {
         // Логгер ещё не доступен
     }
-
+    
     $security = $this->container->get(SecurityManager::class);
     $errorHandler = new ErrorHandler($this->config, $logger, $security->getCspNonce());
     $errorHandler->register();
-
+    
     $this->container->singleton(ErrorHandler::class, $errorHandler);
 }
 
@@ -235,15 +235,15 @@ class Application
      * страницу «Движок не установлен», а не фатальную SQL-ошибку.
      */
     private function registerInstallGate(): void
-    {
-        $guard = new InstalledGuard($this->basePath);
-        $this->container->singleton(InstalledGuard::class, $guard);
+	{
+		$guard = new InstalledGuard($this->basePath);
+		$this->container->singleton(InstalledGuard::class, $guard);
 
-        /** @var Router $router */
-        $router = $this->container->get(Router::class);
-        $router->use(new InstallGateMiddleware($guard));
-    }
-
+		/** @var Router $router */
+		$router = $this->container->get(Router::class);
+		$router->use(new InstallGateMiddleware($guard));
+	}
+	
     /**
      * Фаталити-safe обработчик ошибок на случай, когда bootstrap()
      * всё же не завершился (например, отсутствует config.env).
@@ -293,12 +293,12 @@ class Application
             TimeDateServiceProvider::class,
             ValidatorServiceProvider::class,
             SecurityServiceProvider::class,
-            HttpServiceProvider::class,
-            PageServiceProvider::class,
-            RouterServiceProvider::class,
-            TemplateServiceProvider::class,
-            AdminServiceProvider::class,
-            HtmlSanitizerServiceProvider::class,
+			HttpServiceProvider::class,
+			PageServiceProvider::class,
+			RouterServiceProvider::class,
+			TemplateServiceProvider::class,
+			AdminServiceProvider::class,
+			HtmlSanitizerServiceProvider::class,
         ];
 
         foreach ($providerClasses as $providerClass) {

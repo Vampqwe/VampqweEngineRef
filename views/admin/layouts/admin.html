@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }} — Админ-панель</title>
-    <link rel="stylesheet" href="/assets/css/admin.css">
-    <script src="/assets/js/schema-editor.js" defer></script>
+   <link rel="stylesheet" href="/assets/css/admin.css">
     {{-- CSRF: единый meta-тег для всех fetch/AJAX-запросов админки (menu-editor.js и др.) --}}
     {!! $csrf_meta ?? '' !!}
 </head>
@@ -13,50 +12,56 @@
     <div class="admin-container">
         <aside class="sidebar">
             <div class="logo">
-                <h1>🏥 <?= htmlspecialchars(config('APP_NAME') ?? 'VampqweEngine', ENT_QUOTES, 'UTF-8') ?></h1>
+                <h1>🏥 Достойный уход</h1>
                 <span>Админ-панель</span>
             </div>
             <ul class="nav-menu">
                 <li class="nav-item">
-                    <a href="/admin/" class="nav-link {{ request_path === '/admin' || request_path === '/admin/' ? 'active' : '' }}">
+                    <a href="/admin/" class="nav-link {{ request_path == '/admin' ? 'active' : '' }}">
                         <span class="nav-icon"></span>
                         <span>Дашборд</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="/admin/pages" class="nav-link {{ str_starts_with(request_path, '/admin/pages') ? 'active' : '' }}">
+                    <a href="/admin/pages" class="nav-link">
                         <span class="nav-icon"></span>
                         <span>Страницы</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="/admin/menu" class="nav-link {{ request_path == '/admin/menu' ? 'active' : '' }}">
+                    <a href="/admin/menu" class="nav-link">
                         <span class="nav-icon"></span>
                         <span>Меню</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="/admin/schema" class="nav-link {{ request_path == '/admin/schema' ? 'active' : '' }}">
+                    <a href="/admin/authors" class="nav-link">
+                        <span class="nav-icon">✍️</span>
+                        <span>Авторы</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/schema" class="nav-link">
                         <span class="nav-icon">🔷</span>
                         <span>Schema.org</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="/admin/import" class="nav-link {{ request_path == '/admin/import' ? 'active' : '' }}">
+                    <a href="/admin/redirects" class="nav-link">
+                        <span class="nav-icon">🔀</span>
+                        <span>Редиректы</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/import" class="nav-link">
                         <span class="nav-icon"></span>
                         <span>Импорт страниц</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="/admin/settings" class="nav-link {{ request_path == '/admin/settings' ? 'active' : '' }}">
+                    <a href="/admin/settings" class="nav-link">
                         <span class="nav-icon">️</span>
                         <span>Настройки</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="/admin/config" class="nav-link {{ request_path == '/admin/config' ? 'active' : '' }}">
-                        <span class="nav-icon">📄</span>
-                        <span>config.env</span>
                     </a>
                 </li>
             </ul>
@@ -73,9 +78,11 @@
                         <span>🌐</span>
                         <span>Открыть сайт</span>
                     </a>
-                    <form method="POST" action="/admin/logout" style="display: inline;" class="logout-form">
-                        <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
-                        <button type="submit" class="btn btn-danger">🚪 Выйти</button>
+                    <form method="POST" action="/admin/logout" style="display: inline;">
+                        <button type="submit" class="btn btn-danger">
+                            <span>🚪</span>
+                            <span>Выйти</span>
+                        </button>
                     </form>
                 </div>
             </div>

@@ -18,13 +18,5 @@
     "config": {
         "optimize-autoloader": true,
         "sort-packages": true
-    },
-    "require-dev": {
-        "phpunit/phpunit": "^10.5"
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "Tests\\": "tests/"
-        }
     }
 }

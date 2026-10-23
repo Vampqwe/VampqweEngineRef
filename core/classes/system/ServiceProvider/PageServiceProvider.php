@@ -47,11 +47,11 @@ class PageServiceProvider extends ServiceProvider
         $this->container->singleton(MenuService::class, fn() =>
             new MenuService($db)
         );
-
-        // ─── НОВОЕ ───
-        $this->container->singleton(SitemapService::class, fn() =>
-            new SitemapService($db)
-        );
+		
+		// ─── НОВОЕ ───
+		$this->container->singleton(SitemapService::class, fn() =>
+			new SitemapService($db)
+		);
     }
 
     public function boot(): void

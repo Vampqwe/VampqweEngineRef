@@ -108,6 +108,7 @@ class SecurityHeaders
     {
         $nonceSource = "'nonce-{$nonce}'";
         $directives = array_values(array_filter(array_map('trim', explode(';', $this->cspPolicy))));
+        $directives = $this->ensureImgSource($directives);
         $hasScriptSource = false;
         $hasStyleSource = false;
 
@@ -142,6 +143,32 @@ class SecurityHeaders
         }
 
         return implode('; ', $directives);
+    }
+
+    /**
+     * Гарантировать наличие директивы img-src.
+     *
+     * Без явного img-src браузер применяет default-src ('self'), из-за чего
+     * блокируются внешние изображения (например, images.unsplash.com) и
+     * data: URI (inline-SVG-плейсхолдеры). Если политика CSP не содержит
+     * img-src, добавляем разумный дефолт. Уже настроенная администратором
+     * директива никогда не переопределяется.
+     *
+     * @param string[] $directives
+     * @return string[]
+     */
+    private function ensureImgSource(array $directives): array
+    {
+        foreach ($directives as $directive) {
+            $name = strtolower(trim(preg_split('/\s+/', $directive)[0] ?? ''));
+            if ($name === 'img-src') {
+                return $directives;
+            }
+        }
+
+        $directives[] = "img-src 'self' data: https://images.unsplash.com";
+
+        return $directives;
     }
 
     /**

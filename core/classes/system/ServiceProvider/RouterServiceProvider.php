@@ -132,58 +132,57 @@ class RouterServiceProvider extends ServiceProvider
                 ->setHeader('Retry-After', '10')
                 ->setHeader('X-Engine-State', $state->value);
         })->name('api.health.ready');
+		
+		// ─── Хранилище импорта (нейтральный CSS и скачанные картинки) ───
+		// .htaccess закрывает /storage от веб-сервера, поэтому файлы отдаёт движок.
+		// URL в контенте страниц: /storage/neutral-style.css, /storage/uploads/import/*.jpg|png|...
+		$router->get('/storage/{file}', function (Request $request) use ($container): Response {
+			/** @var \Core\System\Config\Config $config */
+			$config = $container->get(\Core\System\Config\Config::class);
+			// Корень проекта — единый резолвер (канон — APP_ROOT_PATH,
+			// см. Config::getStoragePath()); storage/ вычисляется от корня,
+			// а не из упразднённого FS_BASE_PATH.
+			$baseDir = realpath($config->getStoragePath());
+			if ($baseDir === false) {
+				return Response::text('Not Found', StatusCode::NOT_FOUND);
+			}
 
-        // ─── Хранилище импорта (скачанные картинки) ───
-        // .htaccess закрывает /storage от веб-сервера, поэтому файлы отдаёт движок.
-        // URL в контенте страниц: /storage/uploads/import/*.jpg|png|...
-        $router->get('/storage/{file}', function (Request $request) use ($container): Response {
-            /** @var \Core\System\Config\Config $config */
-            $config = $container->get(\Core\System\Config\Config::class);
-            // Корень проекта — единый резолвер (канон — APP_ROOT_PATH,
-            // см. Config::getStoragePath()); storage/ вычисляется от корня,
-            // а не из упразднённого FS_BASE_PATH.
-            $baseDir = realpath($config->getStoragePath());
-            if ($baseDir === false) {
-                return Response::text('Not Found', StatusCode::NOT_FOUND);
-            }
+			$rel = (string) $request->getAttribute('file', '');
+			// Белый список: только neutral-style.css и картинки из uploads/import
+			if ($rel !== 'neutral-style.css' && !preg_match('#^uploads/import/[A-Za-z0-9._-]+$#', $rel)) {
+				return Response::text('Not Found', StatusCode::NOT_FOUND);
+			}
 
-            $rel = (string) $request->getAttribute('file', '');
-            // Белый список: только картинки из uploads/import
-            if (!preg_match('#^uploads/import/[A-Za-z0-9._-]+$#', $rel)) {
-                return Response::text('Not Found', StatusCode::NOT_FOUND);
-            }
+			$real = realpath($baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel));
+			if ($real === false || !is_file($real) || !str_starts_with($real, $baseDir . DIRECTORY_SEPARATOR)) {
+				return Response::text('Not Found', StatusCode::NOT_FOUND);
+			}
 
-            $real = realpath($baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel));
-            if ($real === false || !is_file($real) || !str_starts_with($real, $baseDir . DIRECTORY_SEPARATOR)) {
-                return Response::text('Not Found', StatusCode::NOT_FOUND);
-            }
+			$mime = match (strtolower(pathinfo($real, PATHINFO_EXTENSION))) {
+				'css'         => 'text/css; charset=UTF-8',
+				'png'         => 'image/png',
+				'jpg', 'jpeg' => 'image/jpeg',
+				'gif'         => 'image/gif',
+				'webp'        => 'image/webp',
+				'svg'         => 'image/svg+xml',
+				default       => 'application/octet-stream',
+			};
+			if (!in_array($mime, ['text/css; charset=UTF-8', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'], true)) {
+				return Response::text('Not Found', StatusCode::NOT_FOUND);
+			}
 
-            $mime = match (strtolower(pathinfo($real, PATHINFO_EXTENSION))) {
-                'css'         => 'text/css; charset=UTF-8',
-                'js'          => 'application/javascript; charset=UTF-8',
-                'png'         => 'image/png',
-                'jpg', 'jpeg' => 'image/jpeg',
-                'gif'         => 'image/gif',
-                'webp'        => 'image/webp',
-                'svg'         => 'image/svg+xml',
-                default       => 'application/octet-stream',
-            };
-            if (!in_array($mime, ['text/css; charset=UTF-8', 'application/javascript; charset=UTF-8', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'], true)) {
-                return Response::text('Not Found', StatusCode::NOT_FOUND);
-            }
+			return Response::file($real, $mime)
+				->setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+		})->where('file', '.+')->name('storage.file');
 
-            return Response::file($real, $mime)
-                ->setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        })->where('file', '.+')->name('storage.file');
-
-        // ─── SITEMAP ───
-    $router->get('/sitemap.xml', function (Request $request): Response {
-        $controller = new \Core\Module\Page\SitemapController(
-            $this->container->get(\Core\Module\Page\SitemapService::class),
-            $this->config
-        );
-        return $controller->index($request);
-    })->name('sitemap');
+		// ─── SITEMAP ───
+	$router->get('/sitemap.xml', function (Request $request): Response {
+		$controller = new \Core\Module\Page\SitemapController(
+			$this->container->get(\Core\Module\Page\SitemapService::class),
+			$this->config
+		);
+		return $controller->index($request);
+	})->name('sitemap');
 
         // ─── ROBOTS.TXT (динамический, домен из APP_BASE_URL) ───
         $router->get('/robots.txt', function (Request $request): Response {

@@ -45,8 +45,8 @@ class MenuService
     public function getVisibleItems(): array
     {
         $items = $this->db->fetchAll(
-            "SELECT * FROM menu_items
-             WHERE is_visible = 1
+            "SELECT * FROM menu_items 
+             WHERE is_visible = 1 
              ORDER BY sort_order ASC, id ASC"
         );
 

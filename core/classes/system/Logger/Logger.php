@@ -308,9 +308,9 @@ class Logger
 private function formatMessage(LogLevel $level, string $message, array $context = []): string
 {
     // Проверяем, есть ли уже микросекунды в формате
-    $hasMicroseconds = str_contains($this->dateFormat, '.u')
+    $hasMicroseconds = str_contains($this->dateFormat, '.u') 
                     || str_contains($this->dateFormat, '.v');
-
+    
     if ($hasMicroseconds) {
         // Микросекунды уже в формате — используем просто date()
         $date = date($this->dateFormat);
