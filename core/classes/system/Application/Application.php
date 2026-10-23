@@ -142,6 +142,7 @@ class Application
             $this->bootProviders();
             $providersBooted = true;
             $this->registerInstallGate();
+            $this->registerRateLimit();
             $this->registerPageCache();
             $this->registerErrorHandler();
 
@@ -245,6 +246,38 @@ class Application
         /** @var Router $router */
         $router = $this->container->get(Router::class);
         $router->use(new InstallGateMiddleware($guard));
+    }
+
+    /**
+     * Глобальный rate-limit middleware. Управляется существующими
+     * настройками SECURITY_RATE_LIMIT_* (см. SecurityManager): при
+     * SECURITY_RATE_LIMIT_ENABLED=false лимитер внутри RateLimiter
+     * пропускает все запросы, поэтому регистрация безопасна всегда.
+     * Ставится ПОСЛЕ install-gate и ДО page-cache: троттлинг ботов
+     * должен происходить до чтения кеша (дешёвый 429 вместо работы),
+     * но незанятый движок не тратит счётчики лимитера.
+     */
+    private function registerRateLimit(): void
+    {
+        if (PHP_SAPI === 'cli') {
+            return;
+        }
+
+        try {
+            $security = $this->container->get(\Core\System\Security\SecurityManager::class);
+        } catch (\Throwable) {
+            // Нет security-контейнера — не блокируем запуск движка.
+            return;
+        }
+
+        $includeUser = $this->config->getBool('SECURITY_RATE_LIMIT_INCLUDE_USER', false);
+
+        /** @var Router $router */
+        $router = $this->container->get(Router::class);
+        $router->use(new \Core\System\Http\RateLimitMiddleware(
+            $security->getRateLimiter(),
+            $includeUser
+        ));
     }
 
     /**
