@@ -177,9 +177,30 @@ class RouterServiceProvider extends ServiceProvider
 
         // ─── SITEMAP ───
     $router->get('/sitemap.xml', function (Request $request): Response {
+        // Очередь + предсгенерированный файл (когда включены) снимают SQL-нагрузку
+        // с пикового трафика; иначе — живая генерация, как раньше.
+        $queue = null;
+        $generator = null;
+        try {
+            $queue = new \Core\System\Queue\Queue($this->config);
+            if ($queue->isEnabled()) {
+                $generator = new \Core\Module\Page\SitemapGenerator(
+                    $this->container->get(\Core\Module\Page\SitemapService::class),
+                    $this->config
+                );
+            } else {
+                $queue = null;
+            }
+        } catch (\Throwable) {
+            $queue = null;
+            $generator = null;
+        }
+
         $controller = new \Core\Module\Page\SitemapController(
             $this->container->get(\Core\Module\Page\SitemapService::class),
-            $this->config
+            $this->config,
+            $generator,
+            $queue
         );
         return $controller->index($request);
     })->name('sitemap');
