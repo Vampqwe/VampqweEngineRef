@@ -29,9 +29,16 @@ final class PageCacheTest extends TestCase
         $this->tmpRoot = sys_get_temp_dir() . '/pagecache_' . uniqid('', true);
         mkdir($this->tmpRoot . '/storage', 0777, true);
 
+        // Изолированный кеш-каталог на каждый тест: иначе ProjectRoot
+        // детектируется от реального корня движка и тесты мешают друг
+        // другу через общий storage/cache/pages.
+        $cacheDir = $this->tmpRoot . '/cache/pages';
+        mkdir($cacheDir, 0777, true);
+
         file_put_contents(
             $this->tmpRoot . '/config.env',
-            "APP_ENV=test\nAPP_DEBUG=false\nPAGE_CACHE_ENABLED=true\nPAGE_CACHE_TTL=60\n"
+            "APP_ENV=test\nAPP_DEBUG=false\nAPP_ALLOWED_HOSTS=example.com\n"
+            . "PAGE_CACHE_ENABLED=true\nPAGE_CACHE_TTL=60\nPAGE_CACHE_DIR=" . $cacheDir . "\n"
         );
         chmod($this->tmpRoot . '/config.env', 0640);
 
@@ -147,8 +154,10 @@ final class PageCacheTest extends TestCase
         $cache = new PageCache($this->config);
         $key = $cache->buildKey($this->makeRequest());
 
-        $file = $cache->getDir() . '/' . $key . '.html.meta';
-        mkdir($cache->getDir(), 0777, true);
+        $file = $cache->getDir() . DIRECTORY_SEPARATOR . $key . '.html.meta';
+        if (!is_dir($cache->getDir())) {
+            mkdir($cache->getDir(), 0777, true);
+        }
         file_put_contents($file, serialize([
             'status' => 200,
             'headers' => [],
@@ -300,7 +309,7 @@ final class PageCacheTest extends TestCase
         $cache->write($key, Response::html('good page'), '/slow');
 
         // Просрочим запись, но оставим файл (stale-копия).
-        $file = $cache->getDir() . '/' . $key . '.html.meta';
+        $file = $cache->getDir() . DIRECTORY_SEPARATOR . $key . '.html.meta';
         $data = unserialize(file_get_contents($file));
         $data['expires_at'] = time() - 10;
         file_put_contents($file, serialize($data));

@@ -34,7 +34,7 @@ use Core\System\Config\Config;
  */
 class PageCache
 {
-    private const INDEX_PATTERN = '/^[0-9a-f]{32}\.html\.meta$/';
+    private const INDEX_PATTERN = '/^[0-9a-f]{64}\.html\.meta$/';
 
     public function __construct(
         private readonly Config $config
@@ -78,11 +78,22 @@ class PageCache
     {
         $override = trim((string) $this->config->get('PAGE_CACHE_DIR', ''));
 
+        // Абсолютный путь используется как есть (важно для тестов с изолированным
+        // кешем); относительный — разрешается от корня проекта, как и прочие
+        // путевые настройки config.env.
         if ($override !== '') {
-            return $this->config->resolvePath($override);
+            return $this->isAbsolutePath($override)
+                ? rtrim($override, '/\\')
+                : $this->config->resolvePath($override);
         }
 
         return $this->config->getStoragePath('cache/pages');
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        return $path !== ''
+            && ($path[0] === '/' || $path[0] === '\\' || preg_match('#^[A-Za-z]:[/\\\\]#', $path) === 1);
     }
 
     /**
@@ -302,7 +313,7 @@ class PageCache
 
         foreach ($entries as $entry) {
             if (preg_match(self::INDEX_PATTERN, $entry) === 1) {
-                $result[] = [substr($entry, 0, 32), $this->getDir() . DIRECTORY_SEPARATOR . $entry];
+                $result[] = [substr($entry, 0, 64), $this->getDir() . DIRECTORY_SEPARATOR . $entry];
             }
         }
 
