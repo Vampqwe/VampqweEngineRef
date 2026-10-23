@@ -100,33 +100,8 @@ class SecurityHeaders
 
         if ($this->cspEnabled) {
             $policy = $nonce === null ? $this->cspPolicy : $this->policyWithNonce($nonce);
-            $policy = $this->ensureImgSource($policy);
             $this->sendHeader('Content-Security-Policy', $policy);
         }
-    }
-
-    /**
-     * Гарантировать наличие директивы img-src.
-     *
-     * Без неё браузер применяет fallback default-src 'self', что блокирует
-     * внешние изображения (например, images.unsplash.com) и data: URI
-     * (inline-SVG плейсхолдеры). Если политика уже содержит img-src —
-     * оставляем её без изменений (конфигурация имеет приоритет).
-     */
-    private function ensureImgSource(string $policy): string
-    {
-        $directives = array_values(array_filter(array_map('trim', explode(';', $policy))));
-
-        foreach ($directives as $directive) {
-            $name = strtolower(trim(preg_split('/\s+/', $directive)[0] ?? ''));
-            if ($name === 'img-src') {
-                return $policy;
-            }
-        }
-
-        $directives[] = "img-src 'self' data: https://images.unsplash.com";
-
-        return implode('; ', $directives);
     }
 
     private function policyWithNonce(string $nonce): string
