@@ -26,6 +26,8 @@ use Core\System\Application\InstalledGuard;
 use Core\System\Config\Config;
 use Core\System\Container\Container;
 use Core\System\Http\InstallGateMiddleware;
+use Core\System\Http\PageCache;
+use Core\System\Http\PageCacheMiddleware;
 use Core\System\Http\Router;
 use Core\System\Logger\Logger;
 use Core\System\Security\SecurityManager;
@@ -140,6 +142,7 @@ class Application
             $this->bootProviders();
             $providersBooted = true;
             $this->registerInstallGate();
+            $this->registerPageCache();
             $this->registerErrorHandler();
 
             $this->booted = true;
@@ -242,6 +245,25 @@ class Application
         /** @var Router $router */
         $router = $this->container->get(Router::class);
         $router->use(new InstallGateMiddleware($guard));
+    }
+
+    /**
+     * Full-page cache (выключен по умолчанию, включается через
+     * PAGE_CACHE_ENABLED в config.env). Регистрируется после install-gate,
+     * чтобы незанятый движок никогда не отдавался из кеша.
+     */
+    private function registerPageCache(): void
+    {
+        $cache = new PageCache($this->config);
+        $this->container->singleton(PageCache::class, $cache);
+
+        if (!$cache->isEnabled()) {
+            return;
+        }
+
+        /** @var Router $router */
+        $router = $this->container->get(Router::class);
+        $router->use(new PageCacheMiddleware($cache));
     }
 
     /**
