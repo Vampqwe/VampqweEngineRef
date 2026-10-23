@@ -128,6 +128,15 @@ class SecurityServiceProvider extends ServiceProvider
             throw new \RuntimeException('Не удалось применить параметры cookie сессии');
         }
 
+        // Драйвер хранения сессий: SESSION_DRIVER=files (по умолчанию, штатный
+        // файловый обработчик PHP) или =redis (SessionRedisHandler поверх
+        // Redis с lazy-миграцией существующих файловых сессий). Обработчик
+        // обязан быть установлен до session_start().
+        $storageFactory = new \Core\System\Session\SessionStorageFactory($this->config);
+        if (!$storageFactory->isFilesDriver()) {
+            session_set_save_handler($storageFactory->makeHandler(), true);
+        }
+
         if (!session_start()) {
             throw new \RuntimeException('Не удалось запустить HTTP-сессию');
         }
