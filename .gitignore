@@ -3,3 +3,5 @@
 logs/*.log
 storage/backups/
 /.phpunit.cache/
+logs/
+!logs/.gitkeep
