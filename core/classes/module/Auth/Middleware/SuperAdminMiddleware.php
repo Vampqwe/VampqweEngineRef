@@ -50,7 +50,22 @@ class SuperAdminMiddleware implements Middleware
 
         $user = $this->session->adminUser() ?? [];
         if (!($user['is_super'] ?? false)) {
-            return Response::text('Доступ запрещён. Требуется роль супер-администратора.', StatusCode::FORBIDDEN);
+            // Визуальная страница 403 в стиле админки (без утечки деталей роли).
+            return Response::html(
+                '<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">'
+                . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+                . '<title>403 — Доступ запрещён</title>'
+                . '<link rel="stylesheet" href="/assets/css/admin.css"></head><body>'
+                . '<div style="display:flex;align-items:center;justify-content:center;'
+                . 'min-height:100vh;font-family:system-ui,sans-serif;text-align:center;padding:1rem">'
+                . '<div><h1 style="font-size:4rem;margin:0;color:#dc2626">403</h1>'
+                . '<p style="font-size:1.25rem;margin:.5rem 0">Доступ запрещён</p>'
+                . '<p style="color:#64748b">Эта страница доступна только супер-администратору.</p>'
+                . '<p style="margin-top:1.5rem"><a href="/admin/" '
+                . 'style="color:#2563eb;text-decoration:none">&larr; Вернуться в админ-панель</a></p>'
+                . '</div></div></body></html>',
+                StatusCode::FORBIDDEN
+            );
         }
 
         return $next($request);

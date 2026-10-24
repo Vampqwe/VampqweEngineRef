@@ -30,6 +30,15 @@ use Core\System\Config\Config;
  */
 class SuperAdminAuth
 {
+    /** Нижний порог времени ответа isSuperAdmin(), мс (анти-timing). */
+    private const MIN_RESPONSE_MS = 50;
+
+    /**
+    * Bcrypt-полином (cost 12) для «холостого» password_verify, когда хеш
+     * супер-админа пуст/бит — время ветки остаётся сопоставимым.
+     */
+    private const DECOY_HASH = '$2y$12$C6UzMDM.H6dfI/f/IKcEeO7bJ1pB4M0/3lB4RgHZ8vV1qZ0GnQWOW';
+
     private Config $config;
 
     public function __construct(Config $config)
@@ -42,18 +51,42 @@ class SuperAdminAuth
      */
     public function isSuperAdmin(string $email, string $password): bool
     {
-        $adminEmail = $this->config->get('SUPER_ADMIN_EMAIL', '');
-        $adminHash = $this->config->get('SUPER_ADMIN_PASSWORD', '');
+        // Минимальное время ответа (мс) для нормализации тайминга: без него
+        // по разнице откликов различимы ветки «email неверный» и «bcrypt».
+        $start = microtime(true);
+        try {
+            return $this->check($email, $password);
+        } finally {
+            $elapsedMs = (int) round((microtime(true) - $start) * 1000);
+            if ($elapsedMs < self::MIN_RESPONSE_MS) {
+                usleep((self::MIN_RESPONSE_MS - $elapsedMs) * 1000);
+            }
+        }
+    }
+
+    private function check(string $email, string $password): bool
+    {
+        $adminEmail = (string) $this->config->get('SUPER_ADMIN_EMAIL', '');
+        $adminHash = (string) $this->config->get('SUPER_ADMIN_PASSWORD', '');
 
         if ($adminEmail === '' || $adminHash === '') {
             return false;
         }
 
-        if (!hash_equals($adminEmail, $email)) {
-            return false;
-        }
+        // hash_equals — константное время сравнения для email.
+        $emailMatches = hash_equals($adminEmail, $email);
 
-        return password_verify($password, $adminHash);
+        // ВСЕГДА выполняем password_verify (даже при неверном email), чтобы
+        // время ответа не зависело от того, угадан ли адрес (timing attack).
+        // При пустом/битом хеше используем валидный bcrypt-полином той же стоимости.
+        $passwordMatches = password_verify(
+            $password,
+            password_get_info($adminHash)['algo'] !== null && $adminHash !== ''
+                ? $adminHash
+                : self::DECOY_HASH
+        );
+
+        return $emailMatches && $passwordMatches;
     }
 
     /**

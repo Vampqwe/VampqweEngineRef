@@ -9,25 +9,33 @@ use Core\System\Http\Request;
 use Core\System\Http\Response;
 use Core\System\Template\Template;
 use Core\System\Security\SecurityManager;
+use Core\System\Http\StatusCode;
+use Core\System\Session\SessionManager;
 
 /**
  * Контроллер просмотра и редактирования config.env.
- * Доступ ТОЛЬКО для супер-администратора.
+ * Доступ ТОЛЬКО для супер-администратора: основная защита —
+ * SuperAdminMiddleware в стеке AdminMiddleware; здесь additionally
+ * defence-in-depth (проверка флага is_super из сессии).
  */
 class ConfigViewerController
 {
+    private SessionManager $session;
+
     public function __construct(
         private ConfigFileParser $parser,
         private AdminService $adminService,
         private Template $template,
-        private SecurityManager $security
-    ) {}
+        private SecurityManager $security,
+        ?SessionManager $session = null
+    ) {
+        $this->session = $session ?? new SessionManager();
+    }
 
     public function index(Request $request): Response
     {
         if (!$this->isSuperAdmin()) {
-            $this->adminService->setFlash('error', 'Доступ запрещён.');
-            return Response::redirect('/admin');
+            return Response::text('Forbidden', StatusCode::FORBIDDEN);
         }
 
         try {
@@ -61,8 +69,7 @@ class ConfigViewerController
     public function save(Request $request): Response
     {
         if (!$this->isSuperAdmin()) {
-            $this->adminService->setFlash('error', 'Доступ запрещён.');
-            return Response::redirect('/admin/config');
+            return Response::text('Forbidden', StatusCode::FORBIDDEN);
         }
 
         $changes = [];
@@ -87,14 +94,19 @@ class ConfigViewerController
         return Response::redirect('/admin/config');
     }
 
+    /**
+     * Defence-in-depth: проверяем флаг is_super из сессии (устанавливается
+     * только AuthController при входе), а не сравнение email через Config —
+     * Config::get уязвим к poison-ключам, и такой путь позволял обычному
+     * админу попасть в редактор config.env.
+     */
     private function isSuperAdmin(): bool
     {
-        $session = $_SESSION ?? [];
-        $admin = $session['admin_user'] ?? null;
-        if (!$admin) return false;
-        $config = \Core\System\Config\Config::getInstance();
-        $superEmail = $config->get('SUPER_ADMIN_EMAIL', '');
-        return $superEmail !== '' && strcasecmp((string) ($admin['email'] ?? ''), $superEmail) === 0;
+        if (!$this->session->isAdminAuthenticated()) {
+            return false;
+        }
+        $admin = $this->session->adminUser() ?? [];
+        return ($admin['is_super'] ?? false) === true;
     }
 
     private const TYPE_LABELS = [

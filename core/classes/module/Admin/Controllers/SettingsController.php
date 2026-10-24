@@ -9,10 +9,14 @@ use Core\System\Http\Request;
 use Core\System\Http\Response;
 use Core\System\Template\Template;
 use Core\System\Security\SecurityManager;
+use Core\System\Session\SessionManager;
 
 /**
  * Контроллер управления настройками движка.
- * Доступ только для супер-администратора (через SuperAdminMiddleware).
+ * Доступ только для супер-администратора: основная защита —
+ * SuperAdminMiddleware в стеке AdminMiddleware; здесь additionally
+ * defence-in-depth (метод isSuperAdmin()), чтобы прямая инстанциация
+ * контроллера вне маршрута /admin не обходила проверку роли.
  */
 class SettingsController
 {
@@ -21,13 +25,42 @@ class SettingsController
         private AdminService $adminService,
         private Template $template,
         private SecurityManager $security,
-    ) {}
+        private ?SessionManager $session = null,
+    ) {
+        $this->session = $session ?? new SessionManager();
+    }
+
+    /**
+     * Defence-in-depth: роль супер-админа берётся из флага is_super,
+     * который устанавливается только AuthController при входе (сессия),
+     * а не из сравнивания email (Config::get уязвим к poison-ключам).
+     */
+    private function isSuperAdmin(): bool
+    {
+        if (!$this->session->isAdminAuthenticated()) {
+            return false;
+        }
+        $user = $this->session->adminUser() ?? [];
+        return ($user['is_super'] ?? false) === true;
+    }
+
+    /**
+     * Закрыть доступ без раскрытия деталей: 403 Forbidden.
+     */
+    private function forbidden(): Response
+    {
+        return Response::text('Forbidden', \Core\System\Http\StatusCode::FORBIDDEN);
+    }
 
     /**
      * GET /admin/settings — показать форму настроек
      */
     public function index(Request $request): Response
     {
+        if (!$this->isSuperAdmin()) {
+            return $this->forbidden();
+        }
+
         $sections = $this->settingsService->getSettingsGrouped();
         $flash = $this->adminService->getFlash();
 
@@ -47,6 +80,10 @@ class SettingsController
      */
     public function update(Request $request): Response
     {
+        if (!$this->isSuperAdmin()) {
+            return $this->forbidden();
+        }
+
         $data = $request->allPost();
         $result = $this->settingsService->saveSettings($data);
 
@@ -69,6 +106,10 @@ class SettingsController
      */
     public function rebuildSeed(Request $request): Response
     {
+        if (!$this->isSuperAdmin()) {
+            return $this->forbidden();
+        }
+
         $result = $this->settingsService->rebuildSeedData();
 
         if (!$result['ok']) {

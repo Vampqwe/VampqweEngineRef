@@ -122,7 +122,8 @@ class AdminServiceProvider extends ServiceProvider
                 $this->container->get(SettingsService::class),
                 $this->container->get(AdminService::class),
                 $this->container->get(Template::class),
-                $this->container->get(SecurityManager::class)
+                $this->container->get(SecurityManager::class),
+                $this->container->get(SessionManager::class)
             )
         );
 
@@ -131,7 +132,8 @@ class AdminServiceProvider extends ServiceProvider
                 $this->container->get(ConfigFileParser::class),
                 $this->container->get(AdminService::class),
                 $this->container->get(Template::class),
-                $this->container->get(SecurityManager::class)
+                $this->container->get(SecurityManager::class),
+                $this->container->get(SessionManager::class)
             )
         );
     }
