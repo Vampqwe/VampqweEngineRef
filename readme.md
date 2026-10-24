@@ -185,9 +185,9 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 | `PagesController` | `Admin\PageService` (extends Page-модуль!), `AdminService`, `Template`, `SecurityManager` | `/admin/pages`, `/pages/new`, `/pages/store`, `/pages/{id}/edit`, `/pages/{id}/update`, `/pages/{id}/delete` | `admin.pages.list`, `admin.pages.edit` → `views/admin/pages/*` |
 | `ImportController` | `HtmlImportParser`, `PageService`, `AdminService`, `Template`, `Config`, `SecurityManager` (+ локально `new ImportJobHandler($config)`) | `/admin/import`, `/import/upload`, `/import/confirm` | `admin.import.index`, `admin.import.preview` → `views/admin/import/*` |
 | `MenuController` | `MenuAdminService`, `Template`, `SecurityManager` | `/admin/menu`, `/menu/items`, `/menu/structure`, `/menu/items/{id}`, `/menu/items/{id}/delete` | `admin.menu.index` → `views/admin/menu/index.html` + JS `assets/js/menu-editor.js` |
-| `SettingsController` | `SettingsService`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/settings`, POST `/settings/rebuild-seed` | `admin.settings.index` → `views/admin/settings/index.html` |
+| `SettingsController` | `SettingsService`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/settings`, POST `/settings/rebuild-seed`. ⚠️ Проверок на супер-админа в коде нет, несмотря на комментарий в файле — см. §13 | `admin.settings.index` → `views/admin/settings/index.html` |
 | `SchemaController` | `SchemaService`, `AdminService`, `Template`, `SecurityManager` | `/admin/schema[...]` CRUD (`->where('id','\d+')`) | `admin.schema.index`, `admin.schema.edit` → `views/admin/schema/*` |
-| `ConfigViewerController` | `ConfigFileParser`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/config` | `admin.config.index` → `views/admin/config/index.html` |
+| `ConfigViewerController` | `ConfigFileParser`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/config`; приватный `isSuperAdmin()` — единственный в модуле рабочий гейт по роли (сверка email сессии с `SUPER_ADMIN_EMAIL` через `strcasecmp`, прямой доступ к `$_SESSION`) | `admin.config.index` → `views/admin/config/index.html` |
 
 **Services** (`Admin/Services/`, namespace `Core\Module\Admin\Services`):
 
@@ -199,7 +199,7 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 | `HtmlImportParser` | `Config` (+ `config/import-parser.php`) | разбор HTML-архива: нейтрализация CSS, скачка картинок в `storage/uploads/import/` |
 | `ImportJobHandler` | `Config`, `?Queue` | постановка/обработка тяжёлой части импорта через `Core\System\Queue\Queue` (`isQueueEnabled()`) |
 | `MenuAdminService` | `DataBase` | CRUD дерева `menu_items` |
-| `SettingsService` | `Config`, `SecurityManager`, `DataBase` | редактирование `config.env` (только супер-админ) |
+| `SettingsService` | `Config`, `SecurityManager`, `DataBase` | редактирование `config.env` (заявлено «только супер-админ», но проверок в классе нет — см. §13); бэкап config.env + `chmod 0640`, audit-лог изменений |
 | `SchemaService` | `DataBase` | CRUD `schema_org` (JSON-LD) |
 | `ConfigFileParser` | `Config`, `SecurityManager` | парсинг/маскировка config.env для просмотрщика |
 
@@ -207,19 +207,35 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 
 | Middleware | Наследование/зависимости | Роль |
 |---|---|---|
-| `AdminMiddleware` | `implements Core\System\Http\Middleware`; внутри сам собирает `MiddlewareStack`: `InstallMiddleware(InstallService)` → `AuthMiddleware()` → `CsrfMiddleware(SecurityManager)` → `AdminCspMiddleware()` | единственный middleware группы `/admin` — композит защиты |
-| `AdminCspMiddleware` | `implements Middleware` | CSP с nonce для админ-страниц |
+| `AdminMiddleware` | `implements Core\System\Http\Middleware`; конструктор: `InstallService`, `SecurityManager`; внутри сам собирает `MiddlewareStack`: `InstallMiddleware(InstallService)` → `AuthMiddleware()` → `SuperAdminMiddleware(session())` → `CsrfMiddleware(SecurityManager)` → `AdminCspMiddleware()` | единственный middleware группы `/admin` — композит защиты. Инстанцируется вручную в `AdminServiceProvider::registerRoutes()`, **не** через DI |
+| `SuperAdminMiddleware` (`Core\Module\Auth\Middleware`) | `implements Middleware`, конструктор: `?SessionManager` (по умолчанию `null` → глобальный хелпер `session()`) | ✅ подключен в `AdminMiddleware` сразу после `AuthMiddleware()`: пропускает только `admin_user['is_super'] === true`; неавторизованный → 302 `/admin/login` (+ flash «Требуется вход…» + `redirect_after_login`), авторизованный не-супер → **403** со страницей `admin/error/403.html` (или текстовым fallback). Модель доступа — см. примечание ниже |
+| `AdminCspMiddleware` | `implements Middleware`, конструктор без аргументов | переопределяет CSP админ-страниц: `'unsafe-inline'` для script-src/style-src (ради WYSIWYG), img-src + data:/blob: — **не** nonce (см. §13) |
+
+> Проверено: стек `AdminMiddleware` собирается через `MiddlewareStack::process()`, который строит цепочку с конца — контроллер выполняется ровно один раз; при редиректе любого из middleware `$next` не вызывается. Фактический порядок: `InstallMiddleware → AuthMiddleware → SuperAdminMiddleware → CsrfMiddleware → AdminCspMiddleware`.
+
+**Модель доступа админки (зафиксировано в коде):** вся группа `/admin` требует **роль супер-администратора**. Обычные пользователи таблицы `users` (`role admin/editor`) проходят `AuthMiddleware` (вход по логину/паролю работает), но получают **403 на всех страницах админки**, включая `/admin/login` после входа. Разделение прав «редактор пишет страницы, админ управляет» на уровне маршрутов отсутствует — это осознанная временная мера до появления ролевой модели (RBAC); если она понадобится, уберите `SuperAdminMiddleware` из общего стека `AdminMiddleware` и навесьте его точечно на чувствительные маршруты (`settings`, `config`, `schema`, `import`, `menu`), оставив остальное за `AuthMiddleware`. Второй гейт — сверка email сессии с `SUPER_ADMIN_EMAIL` через `ConfigViewerController::isSuperAdmin()` / `SettingsController::isSuperAdmin()` — сохранён как defense-in-depth (не зависит от целостности ключа сессии).
 
 ### 5.2 Модуль `Auth` (`Core\Module\Auth\*` → `core/classes/module/Auth/`) — вход и права
 
-Регистрация: классы создаёт `AdminServiceProvider` (для `AuthController`) и `AdminMiddleware` (для `AuthMiddleware`).
+Регистрация: классы создаёт `AdminServiceProvider` (для `AuthController`) и `AdminMiddleware` (для `AuthMiddleware`, `SuperAdminMiddleware`).
 
 | Класс | Зависимости | Роль |
 |---|---|---|
 | `Controllers\AuthController` | `SuperAdminAuth`, `AdminService`, `Config`, `DataBase`, `SecurityManager`, `Template` | GET/POST `/admin/login`, POST `/admin/logout`; bcrypt, rate limiting, CSRF |
 | `Services\SuperAdminAuth` | `Config` | аутентификация супер-админа из `SUPER_ADMIN_EMAIL/SUPER_ADMIN_PASSWORD` (bcrypt cost 12) — **вне БД** |
-| `Middleware\AuthMiddleware` | `implements Middleware`, конструктор без аргументов | проверяет сессию админа внутри `AdminMiddleware` |
-| `Middleware\SuperAdminMiddleware` | `implements Middleware` | отдельный уровень «только супер-админ» (`/settings`, `/config`). ⚠️ Класс существует, но в текущем коде ни одним провайдером не подключен — полагаться на него «из коробки» нельзя |
+| `Middleware\AuthMiddleware` | `implements Middleware`, конструктор без аргументов | первый уровень допуска внутри `AdminMiddleware`: наличие `admin_user` в сессии |
+| `Middleware\SuperAdminMiddleware` | `implements Middleware`, конструктор: `?SessionManager` | ✅ второй уровень допуска, подключен в стек `AdminMiddleware` после `AuthMiddleware`: `admin_user['is_super'] === true`, иначе 403 (`admin/error/403.html`); неавторизованный → 302 на `/admin/login`. Модель доступа всей группы `/admin` описана в §5.1 |
+
+**Как грузится (аутентифицируется) супер-админ — полный поток:**
+
+1. `SuperAdminAuth` регистрируется синглтоном в `AdminServiceProvider::register()`: `new SuperAdminAuth($config)` — только `Config`, БД на этом шаге **не участвует**; `AuthController` получает его через DI-фабрику `$authController`.
+2. POST `/admin/login` → `AuthController::login()` сначала применяет rate limit `$this->security->attempt('admin:login:' . $ip)` и CSRF `validateCsrf()` (обе ошибки — flash + редирект, без исключения).
+3. Ветка супер-админа проверяется **первой**, до обращения к таблице `users`: `SuperAdminAuth::isSuperAdmin($email, $password)` читает `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` (bcrypt-хеш) из `Config` (config.env); при пустых значениях возвращает `false`. Email сравнивается `hash_equals()`, пароль — `password_verify()`. Хеш генерируется `SuperAdminAuth::hashPassword()` (bcrypt cost 12, CLI-утилита).
+4. При успехе: `SessionManager::loginAdmin(SuperAdminAuth::getSuperAdminData())` — данные `{id: 0, email, name, role: 'super_admin', is_super: true}` записываются в сессию под ключом `admin_user`; `loginAdmin()` перед записью вызывает `regenerate(true)` (`session_regenerate_id`, защита от session fixation). Супер-админ в БД не хранится и работает даже при удалённой/повреждённой базе.
+5. Редирект после входа — через `safePostLoginRedirect()`: принимается только внутренний относительный путь из `redirect_after_login` (ставит его `AuthMiddleware` при недопуске); внешние/`//host`/`/\…`/CRLF URL отбрасываются (защита от open-redirect).
+6. Обычные админы: второй веткой `SELECT id, email, name, role, password_hash FROM users WHERE email = :email AND is_active = 1` + `password_verify()`, затем тот же `loginAdmin()` с `is_super => false` и `UPDATE users SET last_login_at = NOW()`. Обе ветки выполняются при **обеих** парах учётных данных (сначала super, потом users) — для нормализации времени ответа `hashPassword()` использует `bcrypt cost 12`, но явной тайминг-заглушки (`dummy_verify`) во второй ветке нет; практический риск низкий (пароль супер-админа всё равно проверяется первым).
+7. Дальнейшие запросы к группе `/admin` проходят два уровня: `AuthMiddleware` (наличие `admin_user` в сессии) → `SuperAdminMiddleware` (`is_super === true`, иначе 403). То есть обычный admin из таблицы `users` авторизуется, но в админку не попадает (модель доступа — §5.1).
+8. Logout: `forgetTransientMarkers('viewed_page_')` → `logoutAdmin()` (снимает `admin_user` + регенерация ID) → flash → `/admin/login`.
 
 ### 5.3 Модуль `Install` (`Core\Module\Install\*` → `core/classes/module/Install/`) — мастер установки
 
@@ -435,7 +451,12 @@ DDL: `database/structure.sql` (только CREATE TABLE + индексы + FK, 
 - Rate-limiter и установочный ключ — файлы в `storage/` (`.rate_limits/`, `.install_key`); чистка `storage/` собьёт их.
 - Импорт HTML: нейтральный CSS → `storage/neutral-style.css`, изображения → `storage/uploads/import/`; URLs в контенте переписываются на `/storage/...` (маршрут раздачи).
 - Приоритет маршрутов: точное совпадение важнее шаблона (`/menu/items` раньше `/menu/items/{id}`).
-- `SuperAdminMiddleware` существует, но нигде не подключен (см. §5.2) — контроль доступа к `/settings` и `/config` сейчас обеспечивается только `AdminMiddleware` + проверками внутри сервисов.
+- ⚠️ **КРИТИЧНО — фактическая защита `/admin/settings` отсутствует.** `SuperAdminMiddleware` нигде не подключен; в `SettingsController` (ни `index`, ни `update`, ни `rebuildSeed`) и в `SettingsService` проверок на супер-админа нет. Комментарий в шапке `SettingsController.php` («Доступ только для супер-администратора через SuperAdminMiddleware») и подпись в §5.2 не соответствуют коду: **любой аутентифицированный админ из таблицы `users` может писать в `config.env`** (POST `/admin/settings`, `/settings/rebuild-seed`). Единственный работающий гейт — `ConfigViewerController::isSuperAdmin()` (сравнение email сессии с `SUPER_ADMIN_EMAIL`), защищающий только `/admin/config`. Исправление: подключить `SuperAdminMiddleware` к маршрутам settings или добавить проверку в контроллер.
+- `ConfigViewerController::isSuperAdmin()` читает `$_SESSION['admin_user']` напрямую, минуя `SessionManager` (нарушает правило «единая точка доступа к сессии»); сверка по email (`strcasecmp`), а не по флагу `is_super` — если обычный пользователь зарегистрирован с тем же email, что и супер-админ, он пройдёт проверку.
+- Вход без тайминг-нормализации: неверный email у обычного пользователя не вызывает bcrypt (`password_verify` пропускается) — время ответа различимо; brute-force при этом гасится rate limiter'ом (`SecurityManager::attempt('admin:login:' . $ip)`).
+- `AdminCspMiddleware` переопределяет CSP админки на `'unsafe-inline'` для `script-src`/`style-src` (ослабление ради WYSIWYG) — nonce-политика публичной части в админке не действует.
+- Rate limit логина привязан к IP (`$request->getIp()` зависит от корректности trusted proxies / заголовков); `SECURITY_RATE_LIMIT_MAX=60`, `WINDOW=60` (config.env) — это общий лимит, отдельного порога именно для login не задано.
+- `vendor/autoload.php` обязателен: без него сайт белый. После клонирования — `composer dump-autoload`.
 - Миграций нет: `structure.sql` применяется мастером (step2) только при чистой установке.
 - Проект разрабатывается под shared-хостинг (`.osp/project.ini`, `.htaccess`), корень = webroot; перенос точки входа потребует правки `.htaccess`, `APP_ROOT_PATH` и `Config`.
 

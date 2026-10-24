@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Middleware;
 
 use Core\Module\Auth\Middleware\AuthMiddleware;
+use Core\Module\Auth\Middleware\SuperAdminMiddleware;
 use Core\Module\Install\Middleware\InstallMiddleware;
 use Core\Module\Install\Services\InstallService;
 use Core\System\Http\CsrfMiddleware;
@@ -30,6 +31,7 @@ use Core\System\Http\MiddlewareStack;
 use Core\System\Http\Request;
 use Core\System\Http\Response;
 use Core\System\Security\SecurityManager;
+use Core\System\Session\SessionManager;
 
 /**
  * Композитный middleware группы /admin.
@@ -38,17 +40,26 @@ use Core\System\Security\SecurityManager;
  * вызывал $next независимо, в результате финальный обработчик (контроллер)
  * выполнялся ДВАЖДЫ, а результат install-проверки терялся. Теперь цепочка
  * собирается через MiddlewareStack и обрабатывается строго последовательно:
- * InstallMiddleware → AuthMiddleware → CsrfMiddleware → AdminCspMiddleware → контроллер.
+ * InstallMiddleware → AuthMiddleware → SuperAdminMiddleware → CsrfMiddleware
+ * → AdminCspMiddleware → контроллер.
+ *
+ * SuperAdminMiddleware закрывает дыру разграничения прав: без него любой
+ * аутентифицированный пользователь таблицы users получал доступ ко всей
+ * админке, включая запись в config.env (POST /admin/settings).
  */
 class AdminMiddleware implements Middleware
 {
     private MiddlewareStack $stack;
 
-    public function __construct(InstallService $installService, SecurityManager $security)
-    {
+    public function __construct(
+        InstallService $installService,
+        SecurityManager $security,
+        ?SessionManager $session = null
+    ) {
         $this->stack = (new MiddlewareStack())
             ->push(new InstallMiddleware($installService))
-            ->push(new AuthMiddleware())
+            ->push(new AuthMiddleware($session))
+            ->push(new SuperAdminMiddleware($session))
             ->push(new CsrfMiddleware($security))
             ->push(new AdminCspMiddleware());
     }
