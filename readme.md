@@ -1,9 +1,10 @@
 # VampqweEngineMedium
 
-> **Note for AI agents / разработчиков:** этот документ — полное техническое описание проекта.
-> Он написан так, чтобы ИИ-ассистент (LLM) мог прочитать его один раз и безопасно вносить изменения
-> в кодовую базу без дополнительного исследования архитектуры. Все утверждения ниже соответствуют
-> фактическому состоянию репозитория.
+> **Note for AI agents / разработчиков:** этот документ — полное техническое описание проекта,
+> оптимизированное для машинного чтения. Главный раздел — **«§5. Карта модулей: чем именно built каждый модуль»** —
+> отвечает на вопрос «модуль X → какие классы его составляют, от чего они наследуются и через какой
+> ServiceProvider регистрируются». Все утверждения соответствуют фактическому состоянию репозитория
+> (проверено по исходникам `core/classes/`).
 
 ---
 
@@ -13,12 +14,12 @@
 |---|---|
 | Тип проекта | Собственный (proprietary) PHP-движок + мини-CMS, **не** фреймворк из пакунов |
 | Язык / версия | PHP `>= 8.1`, `declare(strict_types=1)` обязателен во всех файлах |
-| Зависимости | **Нет composer-пакетов** (`vendor/` содержит только автозагрузчик). Только `ext-dom` |
+| Зависимости рантайма | **Нет composer-пакетов** (`vendor/` содержит только автозагрузчик). Только `ext-dom`. PHPUnit — dev-only (`tests/`) |
 | Autoload | PSR-4: `Core\System\` → `core/classes/system/`, `Core\Module\` → `core/classes/module/`, плюс `core/helpers.php` через `files` |
 | Точка входа | `index.php` (front controller), роутинг — собственный `Router` |
 | БД | **Только MySQL/MariaDB** (PDO). SQLite — зарезервированный драйвер, НЕ использовать |
 | Конфигурация | Один файл `config.env` в корне (KEY=VALUE), читается классом `Config` |
-| Админка | `/admin` (login, dashboard, CRUD страниц, импорт HTML, редактор меню) |
+| Модули | Admin, Auth, Install, Page (+ служебные File/Directory). Карта классов → §5 |
 | Установщик | Веб-мастер `/admin/install` (5 шагов) + CLI `bin/install-key.php` |
 | Шаблоны | Собственный компилятор Blade-подобных директив в `views/**.html`, кэш в `storage/cache/templates/` |
 | Лицензия | Proprietary, © 2024–2026 Дедюля А.И. Копирование запрещено |
@@ -41,30 +42,32 @@
 │   ├── admin-dashboard.php
 │   ├── html-sanitizer.php   # allowlist тегов/атрибутов для HtmlSanitizer
 │   ├── import-parser.php    # настройки HtmlImportParser
-│   └── page-content.php     # настройки контента страниц
+│   └── page-content.php     # настройки контента страниц (в т.ч. счётчик просмотров)
 ├── core/
-│   ├── helpers.php     # глобальные хелперы в namespace Core (см. §7)
+│   ├── helpers.php     # глобальные хелперы в namespace Core (см. §8)
 │   └── classes/
-│       ├── system/     # ядро движка (namespace Core\System\*)
-│       └── module/     # бизнес-модули (namespace Core\Module\*)
+│       ├── system/     # ядро движка (namespace Core\System\*) — см. §3
+│       └── module/     # бизнес-модули (namespace Core\Module\*) — см. §5
 ├── database/
 │   └── structure.sql   # DDL: только CREATE TABLE, без INSERT
-├── views/              # HTML-шаблоны (компилятор см. §6)
+├── views/              # HTML-шаблоны (компилятор см. §9)
 │   ├── layouts/main.html          # публичный layout
 │   ├── pages/                     # home, article, hub, 404, dev-preview
 │   ├── partials/menu.html
-│   └── admin/                     # login, install/step1..5, pages, menu, import, layouts/admin.html
+│   └── admin/                     # auth/, config/, import/, install/, menu/, pages/, schema/, settings/, layouts/admin.html
 ├── assets/             # статика: css/, js/ (admin.js, main.js, menu-editor.js), fonts/
 ├── storage/            # runtime: cache/templates/, .rate_limits/, .install_key, uploads/import/
 ├── logs/               # app.log, audit.log (пишет Logger/AuditLogger)
-├── vendor/             # composer autoloader (без пакетов)
+├── tests/              # юнит-тесты PHPUnit (phpunit.xml.dist в корне)
+├── vendor/             # composer autoloader (+ phpunit как dev-зависимость)
 └── .osp/project.ini    # конфиг shared-хостинга HOSTING (1C-Bitrix-панель .osp)
 ```
 
 ### Система namespace'ов (строго)
 
 - `Core\System\` → `core/classes/system/` — переиспользуемое ядро, НЕ знает о контенте CMS.
-- `Core\Module\` → `core/classes/module/` — прикладные модули (Admin, Auth, Install, Page, Directory, File).
+- `Core\Module\` → `core/classes/module/` — прикладные модули: `Admin`, `Auth`, `Install`, `Page`, `Directory`, `File`.
+- Подпространство внутри модуля повторяет папки: контроллеры → `Controllers\`, сервисы → `Services\`, middleware → `Middleware\`.
 - Пространство имён внутри `system` дублирует папки: `Core\System\Http\Router` = `core/classes/system/Http/Router.php`.
 
 ---
@@ -79,36 +82,42 @@
    - загружает `Config` из `config.env`;
    - создаёт DI-контейнер (`Core\System\Container\Container`);
    - регистрирует и бутит **ServiceProviders** (см. §4);
+   - подключает глобальный `PageCacheMiddleware` (`Application.php`, до dispatch);
    - `InstalledGuard` определяет состояние движка: `installed` / `not_installed` / `db_unreachable`
-     (enum `EngineState`). Если не установлен — включается InstallGateMiddleware и отдаётся страница
+     (enum `EngineState`). Если не установлен — включается `InstallGateMiddleware` и отдаётся страница
      приглашения на `/admin/install`.
 4. `Router::dispatch()` матчит URI → `Request` → middleware stack → closure-controller → `Response::send()`.
 
-### Ключевые классы ядра (все в `core/classes/system/`)
+### Классы ядра (`core/classes/system/`, namespace `Core\System\*`)
 
-| Класс | Путь | Назначение |
-|---|---|---|
-| `Application` | `Application/Application.php` | singleton-загрузчик, container, bootstrap providers |
-| `Container` | `Container/Container.php` | DI: `singleton()`, `bind()`, `get()`, `has()`; автоматически разрешает конструктор-зависимости |
-| `Config` | `Config/Config.php` | парсер `config.env` (KEY=VALUE, кавычки, комментарии); поиск файла детерминирован от base_path, НЕ от getcwd |
-| `Router`, `Route`, `RouteGroup` | `Http/` | маршрутизация с параметрами `{id}`, `group('/prefix', $middleware)`, `fallback()` |
-| `Request` / `Response` | `Http/` | обёртки над superglobals; `Response::json/html/redirect`, `setHeader()`, `send()` |
-| `MiddlewareStack`, `Middleware` | `Http/` | цепочка middleware |
-| `CsrfMiddleware` | `Http/` | проверка токена `_csrf_token` на POST |
-| `DataBase` | `DataBase/DataBase.php` | PDO-обёртка: `query/fetchAll/fetchOne/fetchColumn/insert/execute/transaction(callable)`, reconnect, таймаут подключения |
-| `SqlSanitizer` | `Security/SqlSanitizer.php` | дополнительная защита SQL (принудительно prepared statements, `DB_ENFORCE_PREPARED=true`) |
-| `Template`, `TemplateCompiler`, `TemplateCache`, `Section` | `Template/` | компиляция `.html` шаблонов в PHP, кэш в `storage/cache/templates/` |
-| `Logger`, `LogLevel` | `Logger/` | file-логгер с ротацией (`LOG_MAX_SIZE`) и маскировкой секретов |
-| `AuditLogger` | `Security/AuditLogger.php` | отдельный аудит-лог (`logs/audit.log`) |
-| `Validator` + `Rules/*` | `Validator/` | fluent-валидатор: required, email, minLength, maxLength, numeric, between, in, regex, url, date, custom |
-| `FileSystem`, `PathProbe` | `FileSystem/` | файловые операции с базовым путём `APP_ROOT_PATH` (через `Config::getRootPath()`), правами, лимитом размера |
-| `SecurityManager`, `CsrfToken`, `RateLimiter`, `SecurityHeaders`, `TrustedProxy`, `PathSanitizer`, `SensitiveDataMasker`, `HtmlSanitizer` | `Security/` | единая точка безопасности |
-| `SessionManager` | `Session/` | безопасные PHP-сессии (strict mode, HttpOnly, SameSite, Secure) |
-| `TimeDate`, `DateFormat`, `TimeUnit` | `TimeDate/` | дата/время по `TIMEZONE` |
-| `Map`, `SortOrder` | `Map/` | типизированная упорядоченная карта (служебная структура данных) |
-| `ErrorHandler`, `ErrorException`, `ErrorPage` | `Error/` | перехват throwable → красивая 500 + лог |
-| `InstalledGuard`, `EngineState` | `Application/` | определение состояния установки без бросания исключений при мёртвой БД |
-| `ProjectChecks` | `Diagnostics/ProjectChecks.php` | диагностика окружения (используется мастером установки и dev-preview) |
+Модули строятся ИСКЛЮЧИТЕЛЬНО поверх этих классов. Путь в таблице — относительно `core/classes/system/`.
+
+| Класс (подпапка) | Назначение — то, чем пользуются модули |
+|---|---|
+| `Application` (Application/) | singleton-загрузчик, container, bootstrap providers, EngineState-гарды |
+| `Container` (Container/) | DI: `singleton()`, `bind()`, `get()`, `has()`; автовывод конструктор-зависимостей |
+| `Config` (Config/) | парсер `config.env`; поиск файла детерминирован от base_path, НЕ от getcwd |
+| `Router`, `Route`, `RouteGroup` (Http/) | маршрутизация с параметрами `{id}`, `group('/prefix', $middleware)`, `where()`, `fallback()` |
+| `Request` / `Response` (Http/) | обёртки над superglobals; `Response::json/html/redirect`, `setHeader()`, `send()` |
+| `MiddlewareStack`, `Middleware` (Http/) | цепочка middleware; интерфейс `Middleware::handle(Request, callable $next): Response` |
+| `CsrfMiddleware` (Http/) | проверка токена `_csrf_token` на POST |
+| `RateLimitMiddleware` (Http/) | HTTP-обёртка над `Security\RateLimiter` |
+| `PageCache` / `PageCacheMiddleware` (Http/) | кэш HTML публичных страниц |
+| `InstallGateMiddleware`, `NotInstalledPage`, `DbUnavailablePage` (Http/) | гейт до завершения установки |
+| `DataBase` (DataBase/) | PDO-обёртка: `query/fetchAll/fetchOne/fetchColumn/insert/execute/transaction(callable)`, reconnect. **Главная зависимость всех Services модулей** |
+| `Template`, `TemplateCompiler`, `TemplateCache`, `Section` (Template/) | рендер `.html` шаблонов. **Главная зависимость всех Controllers модулей** |
+| `Validator` + `Rules/*` (Validator/) | fluent-валидация форм в контроллерах/сервисах |
+| `FileSystem`, `PathProbe` (FileSystem/) | файловые операции с базовым путём `APP_ROOT_PATH`; база для модулей File/Directory |
+| `SecurityManager`, `CsrfToken`, `RateLimiter`, `SecurityHeaders`, `TrustedProxy`, `PathSanitizer`, `SensitiveDataMasker`, `HtmlSanitizer`, `AuditLogger`, `SqlSanitizer` (Security/) | единая точка безопасности; `SecurityManager` внедряется почти в каждый админ-контроллер |
+| `SessionManager` + хранилища (Session/) | безопасные PHP-сессии (strict mode, HttpOnly, SameSite, Secure; file/redis) |
+| `Logger`, `LogLevel` (Logger/) | file-логгер с ротацией и маскировкой секретов |
+| `Queue`, `JobRegistry` (Queue/) | файловая очередь фоновых задач (используется импортом и sitemap) |
+| `TimeDate`, `DateFormat`, `TimeUnit` (TimeDate/) | дата/время по `TIMEZONE` |
+| `Map`, `SortOrder` (Map/) | типизированная упорядоченная карта |
+| `ErrorHandler`, `ErrorException`, `ErrorPage` (Error/) | перехват throwable → красивая 500 + лог |
+| `InstalledGuard`, `EngineState`, `ProjectRoot` (Application/) | определение состояния установки без бросания исключений при мёртвой БД |
+| `ProjectChecks` (Diagnostics/) | диагностика окружения (мастер установки, dev-preview) |
+| `ServiceProvider` + 13 провайдеров (ServiceProvider/) | регистрация всего выше в контейнере — см. §4 |
 
 ---
 
@@ -118,25 +127,25 @@
 (`register()` — binds в контейнер, `boot()` — регистрация маршрутов/настроек).
 Порядок подключения задан в `Application::bootstrap()`:
 
-| Провайдер | Что делает |
-|---|---|
-| `ConfigServiceProvider` | грузит `config.env` |
-| `DataBaseServiceProvider` | singleton `DataBase` (MySQL, charset utf8mb4, connect timeout) |
-| `FileSystemServiceProvider` | singleton `FileSystem` c корнем `APP_ROOT_PATH` |
-| `LoggerServiceProvider` | singleton `Logger` |
-| `SecurityServiceProvider` | `SecurityManager` (CSRF, rate limit, headers, audit, trusted proxies) |
-| `HttpServiceProvider` | `Request` из globals, `Response`, cookie |
-| `RouterServiceProvider` | singleton `Router` + **публичные маршруты** (health, storage files, sitemap, robots, fallback-CMS) |
-| `TemplateServiceProvider` | `Template` + компилятор + кэш |
-| `ValidatorServiceProvider` | `Validator` |
-| `TimeDateServiceProvider` | `TimeDate` |
-| `HtmlSanitizerServiceProvider` | `HtmlSanitizer` с allowlist из `config/html-sanitizer.php` |
-| `PageServiceProvider` | сервисы страниц, меню, редиректов и sitemap |
-| `AdminServiceProvider` | **маршруты админки и мастера установки** (см. §5) |
+| Провайдер | Что регистрирует | Какие модульные классы подключает |
+|---|---|---|
+| `ConfigServiceProvider` | грузит `config.env` | — |
+| `DataBaseServiceProvider` | singleton `DataBase` (MySQL, utf8mb4) | — |
+| `FileSystemServiceProvider` | singleton `FileSystem` c корнем `APP_ROOT_PATH` | — |
+| `LoggerServiceProvider` | singleton `Logger` | — |
+| `SecurityServiceProvider` | `SecurityManager` (CSRF, rate limit, headers, audit, trusted proxies) | — |
+| `HttpServiceProvider` | `Request` из globals, `Response`, cookie | — |
+| `RouterServiceProvider` | singleton `Router` + **публичные маршруты** | `Core\Module\Page\*`: `PageController`, `SitemapController`, `RobotsController`, `SitemapGenerator` |
+| `TemplateServiceProvider` | `Template` + компилятор + кэш | — |
+| `ValidatorServiceProvider` | `Validator` | — |
+| `TimeDateServiceProvider` | `TimeDate` | — |
+| `HtmlSanitizerServiceProvider` | `HtmlSanitizer` с allowlist из `config/html-sanitizer.php` | — |
+| `PageServiceProvider` | синглтоны `PageService`, `RedirectService`, `MenuService`, `SitemapService` (все — конструктор от `DataBase`) | `Core\Module\Page\Services` |
+| `AdminServiceProvider` | **все модули админки**: bind контроллеров/сервисов + маршруты `/admin/*` и мастера установки | `Core\Module\Admin\*`, `Core\Module\Auth\*`, `Core\Module\Install\*` |
 
 **Как добавить маршрут:** правьте соответствующий провайдер (`RouterServiceProvider` для публичных,
-`AdminServiceProvider` для админских). Маршруты — замыкания, получающие `Request` и возвращающие `Response`.
-Внутри замыкания берите зависимости через `$container->get(X::class)`. Пример:
+`AdminServiceProvider` для админских). Маршруты — замыкания, получающие `Request` и возвращающие `Response`;
+зависимости внутри — `$container->get(X::class)`. Пример:
 
 ```php
 $api = $router->group('/api');
@@ -150,84 +159,185 @@ $api->get('/health', function () use ($container): Response {
 
 ---
 
-## 5. Таблица маршрутов (фактические)
+## 5. Карта модулей: чем построен каждый модуль (главный раздел для ИИ)
+
+Все модули лежат в `core/classes/module/<Module>/`, namespace `Core\Module\<Module>\`.
+Общий паттерн построения модуля:
+
+```
+Контроллер  = Template (рендер views/...) + SecurityManager (CSRF/audit) + один или несколько Services
+Сервис      = DataBase (CRUD своей таблицы) + иногда Config / FileSystem / Queue / Validator
+Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Response)
+Маршруты+DI = регистрируются ВНЕ модуля, в System\ServiceProvider\AdminServiceProvider
+              (или RouterServiceProvider/PageServiceProvider для публичного модуля Page)
+```
+
+### 5.1 Модуль `Admin` (`Core\Module\Admin\*` → `core/classes/module/Admin/`) — админ-панель `/admin`
+
+Регистрация: `AdminServiceProvider::register()` (singletons) + `boot()` (маршруты группы
+`$admin = $router->group('/admin', new AdminMiddleware(...))`).
+
+**Controllers** (`Admin/Controllers/`, namespace `Core\Module\Admin\Controllers`) и их зависимости из конструкторов:
+
+| Контроллер | Зависимости (constructor-inject) | Маршруты | Шаблоны |
+|---|---|---|---|
+| `DashboardController` | `AdminService`, `Template`, `?SessionManager` | GET `/admin/` | `admin.pages.dashboard` → `views/admin/pages/dashboard.html` |
+| `PagesController` | `Admin\PageService` (extends Page-модуль!), `AdminService`, `Template`, `SecurityManager` | `/admin/pages`, `/pages/new`, `/pages/store`, `/pages/{id}/edit`, `/pages/{id}/update`, `/pages/{id}/delete` | `admin.pages.list`, `admin.pages.edit` → `views/admin/pages/*` |
+| `ImportController` | `HtmlImportParser`, `PageService`, `AdminService`, `Template`, `Config`, `SecurityManager` (+ локально `new ImportJobHandler($config)`) | `/admin/import`, `/import/upload`, `/import/confirm` | `admin.import.index`, `admin.import.preview` → `views/admin/import/*` |
+| `MenuController` | `MenuAdminService`, `Template`, `SecurityManager` | `/admin/menu`, `/menu/items`, `/menu/structure`, `/menu/items/{id}`, `/menu/items/{id}/delete` | `admin.menu.index` → `views/admin/menu/index.html` + JS `assets/js/menu-editor.js` |
+| `SettingsController` | `SettingsService`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/settings`, POST `/settings/rebuild-seed` | `admin.settings.index` → `views/admin/settings/index.html` |
+| `SchemaController` | `SchemaService`, `AdminService`, `Template`, `SecurityManager` | `/admin/schema[...]` CRUD (`->where('id','\d+')`) | `admin.schema.index`, `admin.schema.edit` → `views/admin/schema/*` |
+| `ConfigViewerController` | `ConfigFileParser`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/config` | `admin.config.index` → `views/admin/config/index.html` |
+
+**Services** (`Admin/Services/`, namespace `Core\Module\Admin\Services`):
+
+| Сервис | Зависимости | Что делает / таблица |
+|---|---|---|
+| `AdminService` | `DataBase`, `?SessionManager` | базовые операции админки, статистика дашборда, сессия админа |
+| `PageService` | extends `Core\Module\Page\PageService` (база — `DataBase`) | CRUD `pages` для админки; переопределяет поведение публичного сервиса |
+| `ImportService` | `DataBase` | сохранение результатов импорта в `pages` |
+| `HtmlImportParser` | `Config` (+ `config/import-parser.php`) | разбор HTML-архива: нейтрализация CSS, скачка картинок в `storage/uploads/import/` |
+| `ImportJobHandler` | `Config`, `?Queue` | постановка/обработка тяжёлой части импорта через `Core\System\Queue\Queue` (`isQueueEnabled()`) |
+| `MenuAdminService` | `DataBase` | CRUD дерева `menu_items` |
+| `SettingsService` | `Config`, `SecurityManager`, `DataBase` | редактирование `config.env` (только супер-админ) |
+| `SchemaService` | `DataBase` | CRUD `schema_org` (JSON-LD) |
+| `ConfigFileParser` | `Config`, `SecurityManager` | парсинг/маскировка config.env для просмотрщика |
+
+**Middleware** (`Admin/Middleware/`):
+
+| Middleware | Наследование/зависимости | Роль |
+|---|---|---|
+| `AdminMiddleware` | `implements Core\System\Http\Middleware`; внутри сам собирает `MiddlewareStack`: `InstallMiddleware(InstallService)` → `AuthMiddleware()` → `CsrfMiddleware(SecurityManager)` → `AdminCspMiddleware()` | единственный middleware группы `/admin` — композит защиты |
+| `AdminCspMiddleware` | `implements Middleware` | CSP с nonce для админ-страниц |
+
+### 5.2 Модуль `Auth` (`Core\Module\Auth\*` → `core/classes/module/Auth/`) — вход и права
+
+Регистрация: классы создаёт `AdminServiceProvider` (для `AuthController`) и `AdminMiddleware` (для `AuthMiddleware`).
+
+| Класс | Зависимости | Роль |
+|---|---|---|
+| `Controllers\AuthController` | `SuperAdminAuth`, `AdminService`, `Config`, `DataBase`, `SecurityManager`, `Template` | GET/POST `/admin/login`, POST `/admin/logout`; bcrypt, rate limiting, CSRF |
+| `Services\SuperAdminAuth` | `Config` | аутентификация супер-админа из `SUPER_ADMIN_EMAIL/SUPER_ADMIN_PASSWORD` (bcrypt cost 12) — **вне БД** |
+| `Middleware\AuthMiddleware` | `implements Middleware`, конструктор без аргументов | проверяет сессию админа внутри `AdminMiddleware` |
+| `Middleware\SuperAdminMiddleware` | `implements Middleware` | отдельный уровень «только супер-админ» (`/settings`, `/config`). ⚠️ Класс существует, но в текущем коде ни одним провайдером не подключен — полагаться на него «из коробки» нельзя |
+
+### 5.3 Модуль `Install` (`Core\Module\Install\*` → `core/classes/module/Install/`) — мастер установки
+
+Регистрация: `AdminServiceProvider` (группы `$router->group('/admin/install', $installAccess)`, маршруты step1–5).
+
+| Класс | Зависимости | Роль |
+|---|---|---|
+| `Controllers\InstallController` | `InstallService`, `AdminService`, `Config`, `Template`, `SecurityManager`, `?SessionManager` | шаги 1–5 мастера (`views/admin/install/step1..5.html`) |
+| `Services\InstallService` | `Config`, `?string $basePath` | проверка окружения, применение `database/structure.sql`, первичные данные, запись боевого config, отзыв ключа (HMAC `INSTALL_HMAC_KEY`, метка `storage/.install_key`) |
+| `Middleware\InstallAccessMiddleware` | `implements Middleware` | доступ к мастеру по `?key=` / заголовку `X-Install-Key` (= `INSTALL_KEY`) |
+| `Middleware\InstallMiddleware` | конструктор: `InstallService` | внутренний элемент стека `AdminMiddleware` (запрет админки до конца установки) |
+
+### 5.4 Модуль `Page` (`Core\Module\Page\*` → `core/classes/module/Page/`) — публичная CMS
+
+Регистрация: сервисы — синглтоны в `PageServiceProvider`; контроллеры и маршруты — в `RouterServiceProvider`
+(fallback `/{slug}`, `/sitemap.xml`, `/robots.txt`). Плоская структура (без подпапок Controllers/Services).
+
+| Класс | Зависимости | Роль |
+|---|---|---|
+| `PageController` | `PageService`, `RedirectService`, `MenuService`, `Template`, `Config` | fallback-роут: ЧПУ-страница из `pages`, редиректы из `redirects`, рендер через `layouts/main.html`, 404 |
+| `PageService` | `DataBase` | чтение `pages`; инкремент просмотров через `ViewCounter` (настройка `core/config/page-content.php`) |
+| `MenuService` | `DataBase` | дерево `menu_items` для `partials/menu.html` |
+| `RedirectService` | `DataBase` | таблица `redirects` source→target |
+| `SitemapService` | `DataBase` | URL-лист из `pages`/`menu_items` |
+| `SitemapController` | `SitemapService`, `Config`, `?SitemapGenerator`, `?Queue` | GET `/sitemap.xml` (генерация in-request или через очередь) |
+| `SitemapGenerator` | `SitemapService`, `Config` | сборка XML |
+| `RobotsController` | `Config` | GET `/robots.txt` |
+| `ViewCounter` | `DataBase`, `Config` | асинхронный счётчик просмотров страниц |
+
+### 5.5 Модули `File` и `Directory` (`Core\Module\File\File`, `Core\Module\Directory\Directory`)
+
+Не MVC-модули, а тонкие ООП-надстройки над ядром: оба **`extends Core\System\FileSystem\FileSystem`**,
+конструктор `(string $path, Config $config)`. `File` добавляет лимит размера, MIME-allowlist, защиту путей;
+`Directory` — работу с деревом (`children: FileSystem[]`, содержит `File`). Используются импортом и
+работой со storage напрямую; маршрутов не имеют.
+
+### 5.6 Как собрать новый модуль (рецепт для ИИ)
+
+1. Создать `core/classes/module/<Name>/Controllers/XController.php`
+   (`namespace Core\Module\<Name>\Controllers`, ctor: нужные сервисы + `Template` + `SecurityManager`).
+2. Создать сервис в `<Name>/Services/` (ctor: `Core\System\DataBase\DataBase`).
+3. При необходимости middleware — `implements Core\System\Http\Middleware`.
+4. Зарегистрировать singletons в `register()` и маршруты в `boot()` нового
+   `Core\System\ServiceProvider\<Name>ServiceProvider` (extends `ServiceProvider`) + подключить
+   провайдер в `Application::bootstrap()`. Либо — если модуль админский — добавить в `AdminServiceProvider`
+   внутрь группы `$admin` (она уже несёт всю цепочку `AdminMiddleware`).
+5. Таблицы — в `database/structure.sql`; шаблоны — `views/<area>/...` с `@extends`.
+6. Никогда не тянуть ядро напрямую через `new` — только `$container->get(...)` / хелперы (§8).
+
+---
+
+## 6. Таблица маршрутов (фактические)
 
 ### Публичные (`RouterServiceProvider`)
 
 | Метод | Путь | Handler / описание |
 |---|---|---|
 | GET | `/api/health` | liveness: всегда 200, `{status:"alive", state, time}`, заголовок `X-Engine-State`. НЕ трогает БД |
-| GET | `/api/health/ready` | readiness: проверяет метку установки + MySQL; при проблемах 503 + `Retry-After: 10` |
-| GET | `/storage/{file}` | отдача файлов из `storage/` (нейтральный CSS импорта, загруженные картинки). `.htaccess` закрыл /storage от веб-сервера, поэтому файлы раздаёт движок |
-| GET | `/sitemap.xml` | `SitemapController` (генерируется из таблиц pages/menu) |
+| GET | `/api/health/ready` | readiness: метка установки + MySQL; при проблемах 503 + `Retry-After: 10` |
+| GET | `/storage/{file}` | отдача файлов из `storage/` (нейтральный CSS импорта, картинки). `.htaccess` закрыл /storage, поэтому раздаёт движок |
+| GET | `/sitemap.xml` | `SitemapController` (из таблиц pages/menu) |
 | GET | `/robots.txt` | `RobotsController` |
 | GET | `/__dev/preview` | dev-превью шаблонов. Только loopback + `DEV_PREVIEW_ENABLED=true`. В проде держать false |
 | POST | `/__dev/preview/run` | то же, выполнение превью |
-| ANY | fallback `/{slug}` | `PageController`: ЧПУ-страницы из БД, редиректы из таблицы `redirects`, рендер через `Template` + `layouts/main.html`; 404 → `views/pages/404.html` |
+| ANY | fallback `/{slug}` | `PageController`: ЧПУ-страницы, редиректы, `Template` + `layouts/main.html`; 404 → `views/pages/404.html` |
 
 ### Установка и админка (`AdminServiceProvider`)
 
-Мастер `/admin/install` защищён `InstallAccessMiddleware` (ключ `?key=` или заголовок `X-Install-Key`,
-значение `INSTALL_KEY` из config.env; хэш ключа хранится в `storage/.install_key`).
+Мастер `/admin/install` защищён `InstallAccessMiddleware` (ключ `?key=` или `X-Install-Key`, значение `INSTALL_KEY`; хэш — `storage/.install_key`).
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/admin/install` | Шаг 1 — проверка окружения (PHP, права, PDO) |
-| POST | `/admin/install/step1` | проверка параметров БД → редирект на step2 |
+| GET | `/admin/install` | Шаг 1 — проверка окружения |
+| POST | `/admin/install/step1` | параметры БД |
 | GET/POST | `/admin/install/step2` | применение `database/structure.sql` |
 | GET/POST | `/admin/install/step3` | первичные данные (супер-админ и пр.) |
-| GET/POST | `/admin/install/step4` | финальная конфигурация (запись боевого config) |
-| GET/POST | `/admin/install/step5` | завершение, отзыв установочного ключа |
+| GET/POST | `/admin/install/step4` | финальная конфигурация |
+| GET/POST | `/admin/install/step5` | завершение, отзыв ключа |
 
-Авторизация и кабинет (защищены `AdminMiddleware` + `AuthMiddleware`; CSP — `AdminCspMiddleware`):
-
-| Метод | Путь | Контроллер |
+| Метод | Путь | Контроллер (модуль) |
 |---|---|---|
-| GET/POST | `/admin/login` | `AuthController::showLogin/login` (bcrypt, SUPER_ADMIN из config.env, rate limiting, CSRF) |
-| POST | `/admin/logout` | `AuthController::logout` |
+| GET/POST | `/admin/login` | `AuthController` (Auth); POST `/admin/logout` — в группе `/admin` |
 | GET | `/admin/` | `DashboardController::index` |
-| GET | `/admin/pages` | `PagesController::index` (пагинация `ADMIN_PER_PAGE`, `?per_page=` до 100) |
-| GET | `/admin/pages/new` | create |
-| POST | `/admin/pages/store` | store |
-| GET | `/admin/pages/{id}/edit` | edit |
-| POST | `/admin/pages/{id}/update` | update |
-| POST | `/admin/pages/{id}/delete` | destroy |
-| GET | `/admin/import` | `ImportController::index` — импорт HTML-архивов |
-| POST | `/admin/import/upload` | upload (распарсивает `HtmlImportParser`: нейтрализует CSS, скачивает картинки в `storage/uploads/import/`) |
-| POST | `/admin/import/confirm` | confirm |
-| GET | `/admin/menu` | `MenuController::index` — drag-and-drop редактор (`assets/js/menu-editor.js`) |
-| POST | `/admin/menu/items` | store (важно: статический путь регистрируется раньше шаблонного `/menu/items/{id}`) |
-| POST | `/admin/menu/structure` | сохранение дерева |
-| POST | `/admin/menu/items/{id}` | update |
-| POST | `/admin/menu/items/{id}/delete` | destroy |
+| GET/POST | `/admin/pages*` | `PagesController` (полный список путей — §5.1) |
+| GET/POST | `/admin/import*` | `ImportController` |
+| GET/POST | `/admin/menu*` | `MenuController` (важно: статический `/menu/items` раньше шаблонного `/menu/items/{id}`) |
+| GET/POST | `/admin/settings`, `/settings/rebuild-seed` | `SettingsController` |
+| GET/POST | `/admin/schema*` | `SchemaController` |
+| GET/POST | `/admin/config` | `ConfigViewerController` |
 
-`SuperAdminMiddleware` — отдельный уровень прав для супер-администратора (`Core\Module\Auth\Services\SuperAdminAuth`).
+Все защищённые маршруты идут через группу `AdminMiddleware` = стек
+`InstallMiddleware → AuthMiddleware → CsrfMiddleware → AdminCspMiddleware`.
 
 ---
 
-## 6. База данных
+## 7. База данных
 
 DDL: `database/structure.sql` (только CREATE TABLE + индексы + FK, без данных).
-Таблицы (utf8mb4_unicode_ci, InnoDB):
+Таблицы (utf8mb4_unicode_ci, InnoDB) и «их» сервисы модулей:
 
-| Таблица | Назначение | Ключевые поля |
+| Таблица | Сервис модуля | Назначение / ключевые поля |
 |---|---|---|
-| `pages` | ЧПУ-страницы CMS | `title`, `slug` (UNIQUE), `content` longtext, SEO/OG-поля (`og_title`, description, keywords, meta_robots, canonical) |
-| `menu_items` | дерево меню | `title`, parent_id/порядок |
-| `authors` | авторы | `slug` (UNIQUE) |
-| `redirects` | редиректы старых URL | source → target |
-| `schema_org` | микроразметка Schema.org | JSON-LD по страницам |
-| `tasks` | служебные задачи | `title` |
-| `users` | администраторы (обычные) | bcrypt-хэш пароля |
+| `pages` | `Admin\PageService`, `Page\PageService`, `ImportService` | ЧПУ-страницы: `title`, `slug` (UNIQUE), `content` longtext, SEO/OG-поля |
+| `menu_items` | `MenuAdminService`, `MenuService` | дерево меню: `title`, parent_id/порядок |
+| `authors` | — (пока только DDL) | авторы, `slug` UNIQUE |
+| `redirects` | `RedirectService` | source → target |
+| `schema_org` | `SchemaService` | JSON-LD по страницам |
+| `tasks` | — (пока только DDL) | служебные задачи |
+| `users` | `AdminService` | обычные администраторы (bcrypt-хэш) |
 
 Важно:
-- Супер-админ **не хранится в БД** — он живёт в `config.env` (`SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` = bcrypt-хэш cost 12). Его нельзя удалить через админку.
+- Супер-админ **не хранится в БД** — `config.env` (`SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` = bcrypt cost 12). Не удаляется через админку.
 - Все обращения к БД — только через `DataBase` с prepared statements (`DB_ENFORCE_PREPARED=true`). Никаких конкатенаций SQL.
-- Пароль генерировать так: `php -r "echo password_hash('ПАРОЛЬ', PASSWORD_BCRYPT, ['cost' => 12]);"`
+- Хэш пароля: `php -r "echo password_hash('ПАРОЛЬ', PASSWORD_BCRYPT, ['cost' => 12]);"`
 
 ---
 
-## 7. Глобальные хелперы (`core/helpers.php`, namespace `Core`)
+## 8. Глобальные хелперы (`core/helpers.php`, namespace `Core`)
 
 Регистрируются composer `files`-autoload. Основные:
 
@@ -242,89 +352,59 @@ DDL: `database/structure.sql` (только CREATE TABLE + индексы + FK, 
 
 ---
 
-## 8. Шаблонизатор (Blade-подобный)
+## 9. Шаблонизатор (Blade-подобный)
 
 Файлы: `views/**/*.html`. Компилятор: `TemplateCompiler` → PHP-код в `storage/cache/templates/{md5}.php`
-(кэш включён `TEMPLATE_CACHE=true`; максимальная глубина `@extends/@include` — `TEMPLATE_MAX_RENDER_DEPTH=10`).
-
-Директивы:
+(кэш `TEMPLATE_CACHE=true`; глубина `@extends/@include` — `TEMPLATE_MAX_RENDER_DEPTH=10`).
 
 | Синтаксис | Смысл |
 |---|---|
 | `{{ expr }}` | экранированный вывод (dot-нотация: `page.title`) |
-| `@extends('layouts.main')` | наследование layout |
+| `@extends('layouts.main')` / `@extends('admin.layouts.admin')` | наследование layout |
 | `@section('title') ... @endsection` | определение секции |
 | `@yield('title', 'default')` | вставка секции с дефолтом |
 | `@include('partials.menu', [...])` | подключение partials с данными |
 | `@csrf` / nonce | интеграция с CSP (inline-скрипты получают nonce) |
 
-Компилятор экранирует содержимое `@section`, чтобы `@section("a'");eval(...)` не превращалось в инъекцию кода —
-сохраняйте это поведение при правках.
+Компилятор экранирует содержимое `@section`, чтобы `@section("a'");eval(...)` не превращалось в инъекцию кода — сохраняйте это поведение.
 
 ---
 
-## 9. Безопасность (что уже сделано — не ломать)
+## 10. Безопасность (что уже сделано — не ломать)
 
-- **CSRF**: токен `_csrf_token` (`SECURITY_CSRF_*`), `CsrfMiddleware` на всех POST.
+- **CSRF**: токен `_csrf_token` (`SECURITY_CSRF_*`), `CsrfMiddleware` на всех POST (в админке — внутри `AdminMiddleware`).
 - **Rate limiter**: файловый, `storage/.rate_limits/` (`SECURITY_RATE_LIMIT_MAX/WINDOW`).
-- **Заголовки**: CSP (`SECURITY_CSP_POLICY`), `X-Frame-Options DENY`, `nosniff`, Referrer-Policy, HSTS.
-  Inline JS запрещён политикой; доверенные inline-блоки получают nonce.
-- **Trusted proxies**: `TRUSTED_PROXIES` (CIDR-список). `X-Forwarded-For/Proto` принимаются только от них.
-- **Сессии**: strict mode, HttpOnly, SameSite=Lax, Secure (для HTTPS-прода).
+- **Заголовки**: CSP (`SECURITY_CSP_POLICY`), `X-Frame-Options DENY`, `nosniff`, Referrer-Policy, HSTS; inline JS запрещён, доверенные блоки получают nonce.
+- **Trusted proxies**: `TRUSTED_PROXIES` (CIDR). `X-Forwarded-For/Proto` принимаются только от них.
+- **Сессии**: strict mode, HttpOnly, SameSite=Lax, Secure (HTTPS-prod).
 - **Маскировка секретов** в логах: `SECURITY_SENSITIVE_KEYS`, `SensitiveDataMasker`.
-- **Audit log**: `logs/audit.log` (входы, действия админа).
-- **.htaccess**: запрет доступа к `core|vendor|storage|logs|views|.git|.osp`, к `config.env*`, `composer.*`,
-  `*.sql/log/db/ini/conf/bak/old`, исполнение PHP разрешено только `index.php`. ACME challenge — исключение.
-- **HtmlSanitizer**: allowlist тегов/атрибутов из `config/html-sanitizer.php` для пользовательского HTML.
-- **Установщик**: доступ по ключу `INSTALL_KEY`, HMAC-шифрование временного конфига БД (`INSTALL_HMAC_KEY`),
-  после step5 POST-запросы мастера блокируются навсегда.
+- **Audit log**: `logs/audit.log` (входы, действия админа) — вызывается из контроллеров через `SecurityManager`/`audit()`.
+- **.htaccess**: запрет доступа к `core|vendor|storage|logs|views|.git|.osp`, к `config.env*`, `composer.*`, `*.sql/log/db/ini/conf/bak/old`; PHP исполняется только через `index.php`. ACME challenge — исключение.
+- **HtmlSanitizer**: allowlist из `config/html-sanitizer.php` для пользовательского HTML.
+- **Установщик**: доступ по `INSTALL_KEY`, HMAC временного конфига БД (`INSTALL_HMAC_KEY`), после step5 POST мастера блокируются навсегда.
 - Проверка `Host` по allowlist `APP_ALLOWED_HOSTS`.
 
-Если задача ИИ касается редактирования любого из этих мест — сначала перечитайте §9, изменения не должны
-ослаблять защиту (например, нельзя включать `debug`/`DEV_PREVIEW_ENABLED` в проде или убирать nonce-политику).
+Изменения ИИ не должны ослаблять эти механизмы (не включать `debug`/`DEV_PREVIEW_ENABLED` в проде, не убирать nonce-политику).
 
 ---
 
-## 10. Конфигурация: как запустить
+## 11. Конфигурация: как запустить
 
-1. Требования: PHP ≥ 8.1 (extensions: pdo_mysql, dom, mbstring обычно есть), MySQL/MariaDB, Apache (mod_rewrite) или любой сервер с front-controller правилом. Composer — только для генерации автозагрузчика: `composer dump-autoload` (пакетов нет).
+1. Требования: PHP ≥ 8.1 (pdo_mysql, dom, mbstring), MySQL/MariaDB, Apache (mod_rewrite) или любой сервер с front-controller правилом. Composer — только для автозагрузчика: `composer dump-autoload`.
 2. `cp config.env.example config.env` и заполнить:
-   - `APP_ROOT_PATH` — абсолютный путь к **корню проекта** (каталог с `index.php`; НЕ к `storage/`!) — единственная каноническая настройка базового пути; устаревший `FS_BASE_PATH` полностью упразднён и больше не читается (удалите его из старых `config.env`); все файловые пути конфига (`LOG_FILE`, `SECURITY_AUDIT_FILE`) разрешаются относительно корня — ведущий `/` означает корень проекта, напр. `LOG_FILE=/log/app.log`;
+   - `APP_ROOT_PATH` — абсолютный путь к **корню проекта** (каталог с `index.php`; НЕ к `storage/`) — единственная каноническая настройка базового пути; устаревший `FS_BASE_PATH` упразднён и не читается; все файловые пути конфига (`LOG_FILE`, `SECURITY_AUDIT_FILE`) разрешаются относительно корня — ведущий `/` означает корень проекта;
    - `DB_*` — параметры MySQL;
-   - `SUPER_ADMIN_EMAIL/PASSWORD` — хэш пароля (см. §6);
+   - `SUPER_ADMIN_EMAIL/PASSWORD` — хэш пароля (см. §7);
    - `APP_BASE_URL`, `APP_ALLOWED_HOSTS`, `APP_NAME`;
    - `INSTALL_KEY` — `php -r "echo bin2hex(random_bytes(16));"`;
    - `INSTALL_HMAC_KEY` — `php -r "echo bin2hex(random_bytes(32));"`;
    - `SESSION_COOKIE_SECURE=false` — только для локального HTTP-деба.
-3. Права: `storage/` и `logs/` writable для пользователя веб-сервера (`FS_DEFAULT_FILE_PERMISSION=0775`).
-4. Локальный dev-сервер: `php -S localhost:8000 router.php` (router.php эмулирует .htaccess).
-5. Первичная установка: открыть `http://localhost:8000/admin/install?key=<INSTALL_KEY>` и пройти шаги 1–5.
-   Либо сгенерировать/отозвать ключ CLI: `php bin/install-key.php generate|revoke`.
-6. Проверка: `GET /api/health` (liveness) и `GET /api/health/ready` (readiness).
+3. Права: `storage/` и `logs/` writable для веб-сервера (`FS_DEFAULT_FILE_PERMISSION=0775`).
+4. Локальный dev-сервер: `php -S localhost:8000 router.php`.
+5. Первичная установка: `http://localhost:8000/admin/install?key=<INSTALL_KEY>`, шаги 1–5. Либо CLI: `php bin/install-key.php generate|revoke`.
+6. Проверка: `GET /api/health`, `GET /api/health/ready`.
 
-Ключевые группы переменных config.env (полный список — в `config.env.example`, там же комментарии):
-`FS_*`, `DB_*`, `SUPER_ADMIN_*`, `TIMEZONE/DATE_FORMAT/TIME_FORMAT/DATETIME_FORMAT/LOCALE`,
-`LOG_*`, `SECURITY_*`, `SESSION_*`, `APP_*`, `TEMPLATE_*`, `ADMIN_PER_PAGE`, `INSTALL_KEY`, `INSTALL_HMAC_KEY`,
-`DEV_PREVIEW_ENABLED`.
-
----
-
-## 11. Соглашения кодирования (обязательно соблюдать)
-
-- Первый блок каждого PHP-файла: `<?php`, `declare(strict_types=1);`, proprietary-заголовок с комментарием
-  `VampqweEngineMedium — проприетарный PHP-движок` (© 2024–2026). Не удалять.
-- Комментарии и сообщения пользователю — на русском; логи/исключения тоже допустимо на русском.
-- Все public API типизировано (параметры, возвраты); enum'ы: `Method`, `StatusCode`, `LogLevel`, `EngineState`,
-  `FileSystemType`, `DateFormat`, `TimeUnit`, `SortOrder`, `DataBaseDriver`.
-- Исключения по слоям: `ApplicationException`, `HttpException`, `DataBaseException`, `TemplateException`,
-  `ValidationException`, `FileSystemException`, `LoggerException`, `MapException`, `SecurityException`,
-  `ErrorException`, `TimeDateException` — фабрики вида `X::someReason(...)` вместо голых `new Exception`.
-- Стиль неймспейсов — PascalCase даже для слов из нескольких частей (`DataBase`, `TimeDate`, `Http`),
-  не переименовывать в «правильный» camelCase — на это завязаны пути PSR-4.
-- Контроллеры модулей собираются вручную в провайдерах через `$container->get(...)` (поле-замыкание
-  `fn(Request $r) => $controller()->method($r)`), а не аннотациями.
-- Никаких сторонних библиотек. Новая функциональность — только средствами ядра.
-- Не хранить секреты в коде/репозитории; всё в `config.env` (в .gitignore).
+Группы переменных config.env: `FS_*`, `DB_*`, `SUPER_ADMIN_*`, `TIMEZONE/DATE_FORMAT/TIME_FORMAT/DATETIME_FORMAT/LOCALE`, `LOG_*`, `SECURITY_*`, `SESSION_*`, `APP_*`, `TEMPLATE_*`, `ADMIN_PER_PAGE`, `INSTALL_KEY`, `INSTALL_HMAC_KEY`, `DEV_PREVIEW_ENABLED`.
 
 ---
 
@@ -334,36 +414,47 @@ DDL: `database/structure.sql` (только CREATE TABLE + индексы + FK, 
    (slug = ЧПУ-URL). Fallback-маршрут подхватит её автоматически.
 2. **Новый API-эндпоинт** → `RouterServiceProvider::registerRoutes()`, группа `$api`, ответ через
    `Response::json(..., StatusCode::...)`.
-3. **Новый раздел админки** → контроллер в `core/classes/module/Admin/Controllers/`, сервис в `Services/`,
-   маршруты в `AdminServiceProvider` внутри группы `$admin` (она уже несёт `AdminMiddleware`), шаблоны в
-   `views/admin/...` с `@extends('admin.layouts.admin')`. Не забыть CSRF-поле в формах и audit-запись.
-4. **Новая таблица** → добавить CREATE TABLE в `database/structure.sql` (мастер step2 применяет именно этот файл;
-   для существующих инсталляций нужен отдельный миграционный скрипт — их в проекте нет).
+3. **Новый раздел админки** → см. рецепт §5.6: контроллер в `Admin/Controllers/`, сервис в `Admin/Services/`,
+   маршруты в `AdminServiceProvider` внутри группы `$admin`, шаблоны в `views/admin/...` с
+   `@extends('admin.layouts.admin')`. Не забыть CSRF-поле в формах и audit-запись.
+4. **Новая таблица** → CREATE TABLE в `database/structure.sql` (мастер step2 применяет именно этот файл;
+   миграций нет — для существующих инсталляций нужен отдельный скрипт).
 5. **Новое правило валидации** → класс в `core/classes/system/Validator/Rules/`, реализующий `ValidationRule`,
    + fluent-метод в `Validator`.
 6. **Новая настройка** → ключ в `config.env.example` (+ комментарий), чтение через `config('KEY')` / `Config::get`.
-7. **Проверка изменений**: `php -l` на затронутых файлах; запуск `php -S localhost:8000 router.php`
-   и smoke-тест `/api/health`, `/api/health/ready`, `/admin/login`. Полноценного тест-сьютa в репозитории нет.
+7. **Проверка изменений**: `php -l` на затронутых файлах; `vendor/bin/phpunit` (юнит-тесты в `tests/`);
+   smoke-тест `php -S localhost:8000 router.php` + `/api/health`, `/api/health/ready`, `/admin/login`.
 
 ---
 
 ## 13. Известные особенности и подводные камни
 
-- `vendor/autoload.php` обязателен: без него сайт белый. После клонирования выполнить `composer dump-autoload`.
-- До завершения установки весь трафик перехватывается `InstallGateMiddleware` (страница «движок не установлен»).
-  `EngineState::DbUnreachable` отличается от `not_installed` — health-endpoint'ы честно отражают оба случая.
-- `Config` ищет `config.env` детерминированно от корня проекта, а не от `getcwd()` — учитывайте при запуске CLI-скриптов.
-- Хранилище rate-limiter'а и установочный ключ — файлы в `storage/` (скрытые: `.rate_limits/`, `.install_key`);
-  чистка `storage/` собьёт лимитеры и метку отзыва ключа.
-- Импорт HTML: нейтральный CSS кладётся в `storage/neutral-style.css`, изображения — в `storage/uploads/import/`;
-  URLs внутри контента переписываются на `/storage/...`, которые раздаёт движок (см. маршрут `/storage/{file}`).
+- `vendor/autoload.php` обязателен: без него сайт белый. После клонирования — `composer dump-autoload`.
+- До завершения установки весь трафик перехватывает `InstallGateMiddleware`. `EngineState::DbUnreachable` ≠ `not_installed` — health-endpoint'ы честно отражают оба случая.
+- `Config` ищет `config.env` детерминированно от корня проекта, а не от `getcwd()` — важно для CLI-скриптов.
+- Rate-limiter и установочный ключ — файлы в `storage/` (`.rate_limits/`, `.install_key`); чистка `storage/` собьёт их.
+- Импорт HTML: нейтральный CSS → `storage/neutral-style.css`, изображения → `storage/uploads/import/`; URLs в контенте переписываются на `/storage/...` (маршрут раздачи).
 - Приоритет маршрутов: точное совпадение важнее шаблона (`/menu/items` раньше `/menu/items/{id}`).
-- Проект разрабатывается под shared-хостинг (`.osp/project.ini`, `.htaccess`), поэтому корень = webroot;
-  перенос точки входа в подкаталог потребует правки `.htaccess`, `APP_ROOT_PATH` и `Config`.
+- `SuperAdminMiddleware` существует, но нигде не подключен (см. §5.2) — контроль доступа к `/settings` и `/config` сейчас обеспечивается только `AdminMiddleware` + проверками внутри сервисов.
+- Миграций нет: `structure.sql` применяется мастером (step2) только при чистой установке.
+- Проект разрабатывается под shared-хостинг (`.osp/project.ini`, `.htaccess`), корень = webroot; перенос точки входа потребует правки `.htaccess`, `APP_ROOT_PATH` и `Config`.
 
 ---
 
-## 14. Лицензия
+## 14. Соглашения кодирования (обязательно соблюдать)
+
+- Первый блок каждого PHP-файла: `<?php`, `declare(strict_types=1);`, proprietary-заголовок `VampqweEngineMedium — проприетарный PHP-движок` (© 2024–2026). Не удалять.
+- Комментарии и сообщения пользователю — на русском; логи/исключения тоже допустимо на русском.
+- Все public API типизировано; enum'ы: `Method`, `StatusCode`, `LogLevel`, `EngineState`, `FileSystemType`, `DateFormat`, `TimeUnit`, `SortOrder`, `DataBaseDriver`.
+- Исключения по слоям: `ApplicationException`, `HttpException`, `DataBaseException`, `TemplateException`, `ValidationException`, `FileSystemException`, `LoggerException`, `MapException`, `SecurityException`, `ErrorException`, `TimeDateException` — фабрики вида `X::someReason(...)`.
+- Неймспейсы PascalCase даже для составных слов (`DataBase`, `TimeDate`) — не переименовывать: на это завязаны пути PSR-4.
+- Контроллеры модулей собираются вручную в провайдерах через `$container->get(...)` (замыкание `fn(Request $r) => $controller()->method($r)`), а не аннотациями.
+- Никаких сторонних библиотек; новая функциональность — только средствами ядра.
+- Не хранить секреты в коде/репозитории; всё в `config.env` (в .gitignore).
+
+---
+
+## 15. Лицензия
 
 Проприетарное ПО © 2024–2026, автор — Дедюля Александр Иванович (VampqweEngine).
 Копирование, распространение, модификация и использование без письменного разрешения правообладателя запрещены.
