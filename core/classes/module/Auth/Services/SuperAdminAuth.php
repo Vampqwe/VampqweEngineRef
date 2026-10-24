@@ -34,10 +34,11 @@ class SuperAdminAuth
     private const MIN_RESPONSE_MS = 50;
 
     /**
-    * Bcrypt-полином (cost 12) для «холостого» password_verify, когда хеш
+     * Bcrypt-полином (cost 12) для «холостого» password_verify, когда хеш
      * супер-админа пуст/бит — время ветки остаётся сопоставимым.
+     * Проверен: password_get_info() => algo "2y", password_verify() всегда false.
      */
-    private const DECOY_HASH = '$2y$12$C6UzMDM.H6dfI/f/IKcEeO7bJ1pB4M0/3lB4RgHZ8vV1qZ0GnQWOW';
+    private const DECOY_HASH = '$2y$12$dH6kAOh/./jd2PUEtuGWOeHHSAvZNii0VSKNkgTKlrKm/RZOYwxNq';
 
     private Config $config;
 
