@@ -46,9 +46,13 @@ class SqlSanitizer
             return;
         }
 
-        // Проверяем наличие плейсхолдеров
-        $hasNamedPlaceholders = preg_match('/:[a-zA-Z_][a-zA-Z0-9_]*/', $sql) === 1;
-        $hasPositionalPlaceholders = substr_count($sql, '?') > 0;
+        // Проверяем наличие плейсхолдеров. Именованные — только вне строковых
+        // литералов и каталоговых имён: двоеточие внутри '...text...' или
+        // `schema_org:schema_type` не является параметром (иначе легитимные
+        // запросы с JSON/двоеточиями в тексте дают ложный «несоответствие
+        // количества параметров» и падают).
+        [$namedList, $hasPositionalPlaceholders] = $this->scanPlaceholders($sql);
+        $hasNamedPlaceholders = $namedList !== [];
 
         if (!$hasNamedPlaceholders && !$hasPositionalPlaceholders && !empty($params)) {
             throw SecurityException::unsafeSqlQuery(
@@ -58,8 +62,7 @@ class SqlSanitizer
 
         // Проверяем несоответствие количества параметров
         if ($hasNamedPlaceholders) {
-            preg_match_all('/:[a-zA-Z_][a-zA-Z0-9_]*/', $sql, $matches);
-            $expectedCount = count(array_unique($matches[0]));
+            $expectedCount = count(array_unique($namedList));
             $actualCount = count($params);
 
             if ($expectedCount !== $actualCount) {
