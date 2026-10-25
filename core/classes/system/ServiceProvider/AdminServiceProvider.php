@@ -49,6 +49,8 @@ use Core\Module\Admin\Controllers\ConfigViewerController;
 use Core\Module\Admin\Services\SchemaService;
 use Core\Module\Admin\Services\SettingsService;
 use Core\Module\Admin\Services\ConfigFileParser;
+use Core\Module\Admin\Services\RedirectAdminService;
+use Core\Module\Admin\Controllers\RedirectsController;
 use Core\System\Session\SessionManager;
 
 class AdminServiceProvider extends ServiceProvider
@@ -104,6 +106,22 @@ class AdminServiceProvider extends ServiceProvider
             new ConfigFileParser(
                 $this->container->get(Config::class),
                 $this->container->get(SecurityManager::class)
+            )
+        );
+
+        // Управление редиректами (таблица redirects; runtime-поиск делает
+        // Core\Module\Page\RedirectService).
+        $this->container->singleton(RedirectAdminService::class, fn() =>
+            new RedirectAdminService($db)
+        );
+
+        $this->container->singleton(RedirectsController::class, fn() =>
+            new RedirectsController(
+                $this->container->get(RedirectAdminService::class),
+                $this->container->get(AdminService::class),
+                $this->container->get(Template::class),
+                $this->container->get(SecurityManager::class),
+                $this->container->get(SessionManager::class)
             )
         );
 
@@ -371,5 +389,22 @@ class AdminServiceProvider extends ServiceProvider
             ->name('admin.config.index');
         $admin->post('/config', fn(Request $request): Response => $container->get(ConfigViewerController::class)->save($request))
             ->name('admin.config.save');
+
+        // ─── Редиректы (CRUD по таблице redirects, только супер-админ:
+        //     defence-in-depth в RedirectsController, CSRF — в стеке $admin) ───
+        $admin->get('/redirects', fn(Request $request): Response => $container->get(RedirectsController::class)->index($request))
+            ->name('admin.redirects.index');
+        $admin->post('/redirects/store', fn(Request $request): Response => $container->get(RedirectsController::class)->store($request))
+            ->name('admin.redirects.store');
+        // Статический /redirects/store зарегистрирован выше шаблона
+        // /redirects/{id}/... — точное совпадение имеет приоритет.
+        $admin->get('/redirects/{id}/edit', fn(Request $request): Response => $container->get(RedirectsController::class)->edit($request))
+            ->name('admin.redirects.edit')->where('id', '\d+');
+        $admin->post('/redirects/{id}/update', fn(Request $request): Response => $container->get(RedirectsController::class)->update($request))
+            ->name('admin.redirects.update')->where('id', '\d+');
+        $admin->post('/redirects/{id}/delete', fn(Request $request): Response => $container->get(RedirectsController::class)->destroy($request))
+            ->name('admin.redirects.delete')->where('id', '\d+');
+        $admin->post('/redirects/{id}/reset-hits', fn(Request $request): Response => $container->get(RedirectsController::class)->resetHits($request))
+            ->name('admin.redirects.reset-hits')->where('id', '\d+');
     }
 }

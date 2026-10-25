@@ -1342,3 +1342,84 @@ details[open] > .card-header-toggle::after {
     .menu-title-text { max-width: 55%; }
     .menu-url-hint { display: none; }
 }
+
+/* ═══════════════════════════════════════════
+   REDIRECTS (модуль /admin/redirects)
+   ══════════════════════════════════════════ */
+.badge-muted {
+    background: rgba(139, 148, 158, 0.15);
+    color: var(--text-secondary);
+}
+
+.toolbar-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.toolbar-form input[type="search"] {
+    flex: 0 1 320px;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+}
+
+.card-body-flush {
+    padding: 0;
+}
+
+.empty-hint {
+    padding: 16px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.table-actions {
+    white-space: nowrap;
+}
+
+.table-actions .btn,
+.table-actions .inline-form {
+    margin-right: 4px;
+}
+
+.inline-form {
+    display: inline-block;
+}
+
+.checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.checkbox-inline label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.pagination .page-current {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+}
+
+.pagination .page-link {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.pagination .page-link:hover {
+    background: var(--bg-secondary);
+}
