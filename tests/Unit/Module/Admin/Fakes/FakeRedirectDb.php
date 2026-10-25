@@ -51,10 +51,23 @@ final class FakeRedirectDb extends DataBase
 
         // LIKE-параметры раскрываем как «подстрока» (в MySQL — регистронезависимо
         // из-за utf8mb4_unicode_ci; в тесте — строгое вхождение). Сервис экранирует
-        // спецсимволы LIKE как \% \_ \\ — здесь они трактуются буквально.
+        // спецсимволы LIKE как \% \_ \\ — эмуляция снимает экранирование посимвольно,
+        // поэтому поиск трактуется буквально ('\%%' → '%', а не пустая строка).
         $items = array_values($this->rows);
         if (isset($params['s1']) && isset($params['s2'])) {
-            $needle = strtr(trim($params['s1'], '%'), ['\\%' => '%', '\\_' => '_', '\\\\' => '\\']);
+            $raw = (string) $params['s1'];
+            if (strlen($raw) >= 2 && $raw[0] === '%' && $raw[strlen($raw) - 1] === '%') {
+                $raw = substr($raw, 1, -1); // снимаем внешние wildcard'ы LIKE
+            }
+            $needle = '';
+            $len = strlen($raw);
+            for ($i = 0; $i < $len; $i++) {
+                if ($raw[$i] === '\\' && $i + 1 < $len) {
+                    $needle .= $raw[++$i]; // \%, \_, \\ → литерал
+                } else {
+                    $needle .= $raw[$i];
+                }
+            }
             $items = array_values(array_filter(
                 $items,
                 static fn(array $r): bool => stripos($r['source'], $needle) !== false

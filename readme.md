@@ -185,9 +185,10 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 | `PagesController` | `Admin\PageService` (extends Page-модуль!), `AdminService`, `Template`, `SecurityManager` | `/admin/pages`, `/pages/new`, `/pages/store`, `/pages/{id}/edit`, `/pages/{id}/update`, `/pages/{id}/delete` | `admin.pages.list`, `admin.pages.edit` → `views/admin/pages/*` |
 | `ImportController` | `HtmlImportParser`, `PageService`, `AdminService`, `Template`, `Config`, `SecurityManager` (+ локально `new ImportJobHandler($config)`) | `/admin/import`, `/import/upload`, `/import/confirm` | `admin.import.index`, `admin.import.preview` → `views/admin/import/*` |
 | `MenuController` | `MenuAdminService`, `Template`, `SecurityManager` | `/admin/menu`, `/menu/items`, `/menu/structure`, `/menu/items/{id}`, `/menu/items/{id}/delete` | `admin.menu.index` → `views/admin/menu/index.html` + JS `assets/js/menu-editor.js` |
-| `SettingsController` | `SettingsService`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/settings`, POST `/settings/rebuild-seed`. ⚠️ Проверок на супер-админа в коде нет, несмотря на комментарий в файле — см. §13 | `admin.settings.index` → `views/admin/settings/index.html` |
+| `SettingsController` | `SettingsService`, `AdminService`, `Template`, `SecurityManager`, `?SessionManager` | GET/POST `/admin/settings`, POST `/settings/rebuild-seed`. ✅ Defence-in-depth: `isSuperAdmin()` по флагу `is_super` из сессии (см. §13) | `admin.settings.index` → `views/admin/settings/index.html` |
 | `SchemaController` | `SchemaService`, `AdminService`, `Template`, `SecurityManager` | `/admin/schema[...]` CRUD (`->where('id','\d+')`) | `admin.schema.index`, `admin.schema.edit` → `views/admin/schema/*` |
-| `ConfigViewerController` | `ConfigFileParser`, `AdminService`, `Template`, `SecurityManager` | GET/POST `/admin/config`; приватный `isSuperAdmin()` — единственный в модуле рабочий гейт по роли (сверка email сессии с `SUPER_ADMIN_EMAIL` через `strcasecmp`, прямой доступ к `$_SESSION`) | `admin.config.index` → `views/admin/config/index.html` |
+| `ConfigViewerController` | `ConfigFileParser`, `AdminService`, `Template`, `SecurityManager`, `?SessionManager` | GET/POST `/admin/config`; приватный `isSuperAdmin()` — defence-in-depth гейт по флагу `admin_user['is_super']` через `SessionManager` (не по email, не прямым чтением `$_SESSION`) | `admin.config.index` → `views/admin/config/index.html` |
+| `RedirectsController` | `RedirectAdminService`, `AdminService`, `Template`, `SecurityManager`, `?SessionManager` | `/admin/redirects`, `/redirects/store`, `/redirects/{id}/edit`, `/{id}/update`, `/{id}/delete`, `/{id}/reset-hits` (все POST под CSRF; `->where('id','\d+')`). Defence-in-depth: `isSuperAdmin()` по флагу `is_super` | `admin.redirects.*` → `views/admin/redirects/index.html`, `edit.html` |
 
 **Services** (`Admin/Services/`, namespace `Core\Module\Admin\Services`):
 
@@ -202,6 +203,7 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 | `SettingsService` | `Config`, `SecurityManager`, `DataBase` | редактирование `config.env` (заявлено «только супер-админ», но проверок в классе нет — см. §13); бэкап config.env + `chmod 0640`, audit-лог изменений |
 | `SchemaService` | `DataBase` | CRUD `schema_org` (JSON-LD) |
 | `ConfigFileParser` | `Config`, `SecurityManager` | парсинг/маскировка config.env для просмотрщика |
+| `RedirectAdminService` | `DataBase` | CRUD таблицы `redirects` для админки: список с поиском/пагинацией, серверная валидация путей (источник — только относительный `/…`, защита от open-redirect), лимит `MAX_REDIRECTS = 5000`, LIKE-экранирование `%`/`_`/`\` |
 
 **Middleware** (`Admin/Middleware/`):
 
@@ -323,6 +325,7 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 | GET/POST | `/admin/import*` | `ImportController` |
 | GET/POST | `/admin/menu*` | `MenuController` (важно: статический `/menu/items` раньше шаблонного `/menu/items/{id}`) |
 | GET/POST | `/admin/settings`, `/settings/rebuild-seed` | `SettingsController` |
+| GET/POST | `/admin/redirects*` (index/store/{id}/edit/update/delete/reset-hits) | `RedirectsController` (`->where('id','\d+')`, статический `/store` зарегистрирован до шаблона `/{id}/…`) |
 | GET/POST | `/admin/schema*` | `SchemaController` |
 | GET/POST | `/admin/config` | `ConfigViewerController` |
 
@@ -341,7 +344,7 @@ DDL: `database/structure.sql` (только CREATE TABLE + индексы + FK, 
 | `pages` | `Admin\PageService`, `Page\PageService`, `ImportService` | ЧПУ-страницы: `title`, `slug` (UNIQUE), `content` longtext, SEO/OG-поля |
 | `menu_items` | `MenuAdminService`, `MenuService` | дерево меню: `title`, parent_id/порядок |
 | `authors` | — (пока только DDL) | авторы, `slug` UNIQUE |
-| `redirects` | `RedirectService` | source → target |
+| `redirects` | `Page\RedirectService` (рантайм), `Admin\RedirectAdminService` (CRUD) | source → target, status_code, is_active, hit_count, note |
 | `schema_org` | `SchemaService` | JSON-LD по страницам |
 | `tasks` | — (пока только DDL) | служебные задачи |
 | `users` | `AdminService` | обычные администраторы (bcrypt-хэш) |
@@ -453,7 +456,7 @@ DDL: `database/structure.sql` (только CREATE TABLE + индексы + FK, 
 - Приоритет маршрутов: точное совпадение важнее шаблона (`/menu/items` раньше `/menu/items/{id}`).
 - ✅ **Защита `/admin/settings` и `/admin/config` исправлена** (ранее — критическая дыра: любой аутентифицированный админ мог писать в `config.env`). Теперь три уровня: 1) `SuperAdminMiddleware` подключен к маршрутам settings/config в `AdminServiceProvider`; 2) `SettingsController::isSuperAdmin()` и `ConfigViewerController::isSuperAdmin()` — defence-in-depth при прямом вызове мимо middleware; 3) проверка идёт по флагу `admin_user['is_super']` (не по email) через `SessionManager`, а не прямым чтением `$_SESSION`. Тесты: `tests/Unit/Module/Auth/AdminAccessTest.php`.
 - Тайминг-нормализация входа реализована в `SuperAdminAuth`: при пустом/неверном пароле супер-админа выполняется `password_verify` против заведомо ложного bcrypt-хеша (`DECOY_HASH`, cost 12) — время ответа неотличимо от успешного входа. Обычные пользователи из таблицы `users`: ветка с неверным email по-прежнему пропускает bcrypt; brute-force гасится rate limiter'ом (`SecurityManager::attempt('admin:login:' . $ip)`).
-- ⚠️ **Модуль «Редиректы» (админка) не реализован в коде**: ссылка `/admin/redirects` в topbar ведёт на несуществующие маршруты (`RedirectsController`/`RedirectAdminService` отсутствуют, как и `/admin/authors`). Работает только рантайм-разыменование `Core\Module\Page\RedirectService` (таблица `redirects`, source→target) в fallback-роуте. При реализации соблюдать правила: сборка в `AdminServiceProvider`, стек `AdminMiddleware` + CSRF, проверка прав, GitHub Dark классы из `admin.css`.
+- ✅ **Модуль «Редиректы» (админка) реализован**: `RedirectsController` + `RedirectAdminService` зарегистрированы в `AdminServiceProvider` (singletons + маршруты внутри группы `/admin` со стеком `AdminMiddleware`: Install → Auth → SuperAdmin → CSRF → CSP). Защита трёхуровневая: `SuperAdminMiddleware` (403 для не-супер), defence-in-depth `isSuperAdmin()` по флагу `is_super` в каждом методе контроллера, серверная валидация путей в сервисе (источник — только относительный `/…`; назначение — `/…` или http(s); лимит 5000 записей; LIKE-экранирование). Тесты: `tests/Unit/Module/Admin/RedirectAdminServiceTest.php`, `RedirectsAccessTest.php`. Ссылка `/admin/authors` в topbar по-прежнему ведёт на нереализованный модуль (в планах).
 - `AdminCspMiddleware` переопределяет CSP админки на `'unsafe-inline'` для `script-src`/`style-src` (ослабление ради WYSIWYG) — nonce-политика публичной части в админке не действует.
 - Rate limit логина привязан к IP (`$request->getIp()` зависит от корректности trusted proxies / заголовков); `SECURITY_RATE_LIMIT_MAX=60`, `WINDOW=60` (config.env) — это общий лимит, отдельного порога именно для login не задано.
 - `vendor/autoload.php` обязателен: без него сайт белый. После клонирования — `composer dump-autoload`.

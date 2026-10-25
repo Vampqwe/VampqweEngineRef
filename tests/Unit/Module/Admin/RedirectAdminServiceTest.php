@@ -90,7 +90,7 @@ final class RedirectAdminServiceTest extends TestCase
 
     public function testNormalizeCollapsesSlashesAndTrailingSlash(): void
     {
-        $result = $this->service->create('//a//b//', '/c//d/', 302);
+        $result = $this->service->create('/a//b/', '/c//d/', 302);
 
         self::assertTrue($result['ok']);
         $row = $this->service->find((int) $result['id']);
