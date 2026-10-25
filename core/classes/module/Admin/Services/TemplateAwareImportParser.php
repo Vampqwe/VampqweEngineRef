@@ -18,6 +18,23 @@ declare(strict_types=1);
  * Unauthorized copying, distribution, or use is strictly prohibited.
  */
 
+/*
+ * CHANGELOG 2026-10 (прогон на реальных файлах page/*.html):
+ *  - «Голый шаблон» переопределён: файл считается самодостатичным, когда в нём
+ *    нет контентных маркеров движка (canonical и JSON-LD больше не признак
+ *    штатного контракта — они есть у реальных шаблонов diagnostika);
+ *  - срез контента строится от первого <nav>/<main>/<article>/<section> после
+ *    <body> до </body> включительно (в контент попадают <footer> и <script>);
+ *  - start/end-маркеры совместимы с content_raw-срезом: end включает </body>
+ *    в срез, чтобы побитный режим не тянул хвостовые </html></body>;
+ *  - canonical исходника вырезается из контента (дубль canonical ломает
+ *    PageService::renderCanonical() при рендере); slug берётся из канонического
+ *    URL файла, fallback — self-link навигации;
+ *  - синтез схем усилен: @graph разбирается на отдельные записи, даты схем
+ *    приводятся к ISO-8601 (MySQL JSON-колонка + strict-режим иначе роняют
+ *    всю транзакцию импорта на невалидном datetime).
+ */
+
 namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
@@ -56,11 +73,14 @@ class TemplateAwareImportParser extends HtmlImportParser
     /** Регулярка открывающего контентного маркера любого известного семейства. */
     private const CONTENT_MARKER_RE = '/<!--[<-]*\s*(?:ОСНОВНОЙ\s*КОНТЕНТ|MAIN[_ ]?CONTENT|CONTENT\s+(?:START|BEGIN)|nav(?:\s+(?:start|begin))?)\s*[>-]+-->/iu';
 
-    /** Первый комментарий-маркер после открытия <body> — начало голого шаблона. */
-    private const TEMPLATE_START_RE = '<body[^>]*>\s*(<!--[\s\S]*?-->[\s\S]*)';
+    /**
+     * Начало среза самодостатичной страницы: первый контентный элемент после
+     * <body> (навигация — часть страницы: файл рендерится как есть).
+     */
+    private const TEMPLATE_START_BODY_RE = '(<body[^>]*>[\s\S]*?)(<(?:nav(?:\s|>|$)|main(?:\s|>|$)|article(?:\s|>|$)|section(?:\s|>|$)))';
 
-    /** Закрывающий маркер среза: конец документа (служебные комментарии не отсекаем). */
-    private const TEMPLATE_END_RE = '</body>';
+    /** Конец среза: закрывающий </body> ВКЛЮЧИТЕЛЬНО (в срез попадают footer/script). */
+    private const TEMPLATE_END_BODY_RE = '([\s\S]*</body)>';
 
     public function __construct(Config $config)
     {
@@ -80,21 +100,33 @@ class TemplateAwareImportParser extends HtmlImportParser
             return parent::parse($html);
         }
 
+        // Нормализация та же, что внутри HtmlParser::parse(): срезы и правки
+        // контента считаем по нормализованному исходнику (CRLF → LF, BOM).
+        $sourceHtml = str_replace(["\r\n", "\r"], "\n", $html);
+        $sourceHtml = ltrim($sourceHtml, "\xEF\xBB\xBF");
+
         $originalRules = $this->getRules();
 
         try {
             $rules = $originalRules;
             if (isset($rules['blocks']['main_content']) && is_array($rules['blocks']['main_content'])) {
-                $rules['blocks']['main_content']['start'] = $this->toDelimiter(self::TEMPLATE_START_RE, '~');
-                $rules['blocks']['main_content']['end'] = $this->toDelimiter(self::TEMPLATE_END_RE, '~');
+                $rules['blocks']['main_content']['start'] = $this->toDelimiter(self::TEMPLATE_START_BODY_RE, '~');
+                $rules['blocks']['main_content']['end'] = $this->toDelimiter(self::TEMPLATE_END_BODY_RE, '~');
                 // Хвостовые блоки среза (footer/script) — часть самодостатичной
                 // страницы: целостность не сверяем (маркер end теперь regex).
                 $rules['blocks']['main_content']['verify_integrity'] = false;
                 $this->setRules($rules);
             }
 
-            $parsed = parent::parse($html);
-            $parsed = $this->applyTemplateSlug($html, $parsed);
+            $parsed = parent::parse($sourceHtml);
+
+            // Контент самодостатичного файла чистим от артефактов шаблона:
+            // дублирующий <link rel="canonical"> извлечённого источника
+            // (движок отдаст свой canonical при рендере — два тега в <head>
+            // ломают PageService::renderCanonical()).
+            $parsed = $this->stripSourceCanonicalFromContent($parsed);
+
+            $parsed = $this->applyTemplateSlug($sourceHtml, $parsed);
 
             return $this->synthesizeSchema($parsed);
         } finally {
@@ -105,9 +137,12 @@ class TemplateAwareImportParser extends HtmlImportParser
     }
 
     /**
-     * Файл относится к «голому шаблону», если в нём нет ни контентных
-     * маркеров движка, ни JSON-LD, ни canonical — т.е. штатный контракт
-     * неприменим и нужна автоподстройка.
+     * Файл относится к «голому шаблону», если в нём нет контентных маркеров
+     * движка — т.е. штатный контракт неприменим и нужна автоподстройка.
+     *
+     * Canonical и JSON-LD признаком штатного контракта НЕ являются: реальные
+     * самодостатичные шаблоны содержат и то, и другое (проверено на файлах
+     * семейства diagnostika), но между маркерами движка их контент не лежит.
      */
     public function isBareTemplate(string $html): bool
     {
@@ -115,11 +150,38 @@ class TemplateAwareImportParser extends HtmlImportParser
             return false;
         }
 
-        $hasMarker = preg_match(self::CONTENT_MARKER_RE, $html) === 1;
-        $hasLdJson = stripos($html, 'application/ld+json') !== false;
-        $hasCanonical = preg_match('~<link\b[^>]*rel=["\']canonical["\'][^>]*>~iu', $html) === 1;
+        return preg_match(self::CONTENT_MARKER_RE, $html) !== 1;
+    }
 
-        return !$hasMarker && !$hasLdJson && !$hasCanonical;
+    /**
+     * Убрать из контента строку <link rel="canonical"> источника. Правки
+     * применяются по ссылкам к одному и тому же контенту (content,
+     * values['content'], blocks['main_content']['value']).
+     *
+     * @param array<string,mixed> $parsed
+     * @return array<string,mixed>
+     */
+    private function stripSourceCanonicalFromContent(array $parsed): array
+    {
+        $strip = static function (string $html): string {
+            return preg_replace(
+                '~[ \t]*<link\b[^>]*rel=["\']canonical["\'][^>]*>[ \t]*\n?~iu',
+                '',
+                $html
+            ) ?? $html;
+        };
+
+        if (isset($parsed['content']) && is_string($parsed['content'])) {
+            $parsed['content'] = $strip($parsed['content']);
+        }
+        if (isset($parsed['values']['content']) && is_string($parsed['values']['content'])) {
+            $parsed['values']['content'] = $strip($parsed['values']['content']);
+        }
+        if (isset($parsed['blocks']['main_content']['value']) && is_string($parsed['blocks']['main_content']['value'])) {
+            $parsed['blocks']['main_content']['value'] = $strip($parsed['blocks']['main_content']['value']);
+        }
+
+        return $parsed;
     }
 
     /**
@@ -144,19 +206,30 @@ class TemplateAwareImportParser extends HtmlImportParser
     }
 
     /**
-     * Slug из self-link навигации: среди <a href="/путь/"> внутри <nav>
-     * выбирается ссылка, чей текст совпадает с заголовком страницы (или
-     * является его префиксом) — это текущая страница меню. Fallback —
-     * последняя непустая относительная ссылка навигации.
+     * Slug самодостатичного файла. Приоритет — canonical источника (он есть
+     * у реальных шаблонов diagnostika): слаг берётся из канонического URL,
+     * поэтому страница занимает ровно тот путь, который заявлен в файле.
+     * Fallback — self-link навигации: ссылка <a href="/путь/"> внутри <nav>,
+     * чей текст совпадает с заголовком страницы (или является его префиксом).
      *
      * @param array<string,mixed> $parsed
      * @return array<string,mixed>
      */
     private function applyTemplateSlug(string $html, array $parsed): array
     {
-        // Применяем только когда штатный источник (canonical) ничего не дал.
         $sourceCanonical = trim((string) ($parsed['values']['canonical'] ?? ''));
+
+        // Canonical источника всегда выигрывает у translit-слэга из title,
+        // который мог подставить штатный parse() (slug_from_title).
         if ($sourceCanonical !== '') {
+            $slug = HtmlParser::slugFromCanonicalUrl($sourceCanonical);
+            if ($slug !== '') {
+                $parsed['slug'] = $slug;
+                if (array_key_exists('slug', $parsed['values'])) {
+                    $parsed['values']['slug'] = $slug;
+                }
+            }
+
             return $parsed;
         }
 
