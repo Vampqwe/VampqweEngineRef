@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 namespace Core\Module\Admin\Services;
 
+use Core\System\Application\Application;
 use Core\System\Config\Config;
 use Core\System\DataBase\DataBase;
 use Core\System\Queue\Queue;
@@ -115,6 +116,19 @@ class ImportJobHandler
     }
 
     /**
+     * Разрешить парсер импорта: через DI-контейнер приложения, если оно
+     * инициализировано (веб-контекст), иначе — напрямую (CLI-воркер).
+     */
+    private static function resolveParser(Config $config): HtmlImportParser
+    {
+        try {
+            return Application::getInstance()->getContainer()->get(HtmlImportParser::class);
+        } catch (\Throwable) {
+            return new HtmlImportParser($config);
+        }
+    }
+
+    /**
      * Обработчик job «import.html». Бросок исключения трактуется очередью
      * как неудача (ретрай/failed решает Queue).
      *
@@ -136,7 +150,11 @@ class ImportJobHandler
             }
 
             $db = new DataBase($this->config);
-            $parser = new HtmlImportParser($this->config);
+
+            // Парсер получается через DI-контейнер (синглтон зарегистрирован
+            // в AdminServiceProvider). В CLI-контексте воркера приложение может
+            // быть не инициализировано — тогда создаём парсер напрямую.
+            $parser = self::resolveParser($this->config);
 
             $parsed = $parser->parse($html);
 

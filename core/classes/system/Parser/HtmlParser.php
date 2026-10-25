@@ -46,7 +46,7 @@ class HtmlParser extends AbstractParser
     public const KNOWN_BLOCK_TYPES = ['marker', 'xpath', 'meta', 'schema', 'script', 'title'];
 
     /** @var array<string,array> Активный профиль блоков (валидированный) */
-    private array $blocks;
+    protected array $blocks = [];
 
     /** Картинки, «найденные» прогоном (для контракта отчёта; сам парсер их не качает) */
     private array $foundImages = [];
@@ -424,7 +424,7 @@ class HtmlParser extends AbstractParser
     /**
      * @return array<string,array>
      */
-    private function buildActiveBlocks(): array
+    protected function buildActiveBlocks(): array
     {
         $blocks = (array) ($this->rules['blocks'] ?? []);
         if ($blocks === []) {
@@ -443,6 +443,16 @@ class HtmlParser extends AbstractParser
         }
 
         return $valid;
+    }
+
+    /**
+     * Актуализация профиля блоков по текущим правилам (вызывается дочерними
+     * классами после изменения $rules — например, при тестовой подмене секции
+     * 'blocks'). Повторно валидирует описания и отмечает профиль переопределённым.
+     */
+    protected function rebuildActiveBlocks(): void
+    {
+        $this->blocks = $this->buildActiveBlocks();
     }
 
     /**

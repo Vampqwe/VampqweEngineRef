@@ -65,12 +65,12 @@ final class HtmlImportParserTest extends TestCase
     {
         $parser = new HtmlImportParser(Config::getInstance());
 
-        $ref = new \ReflectionProperty(HtmlImportParser::class, 'rules');
-        $ref->setAccessible(true);
-        $rules = (array) $ref->getValue($parser);
+        // Публичный API модуля парсеров: полная замена правил с пересборкой
+        // профиля блоков (без рефлексии над внутренним состоянием).
+        $rules = $parser->getRules();
         $rules['blocks'] = $blocks;
         $rules['marker_aliases'] = [];
-        $ref->setValue($parser, $rules);
+        $parser->setRules($rules);
 
         return $parser;
     }
