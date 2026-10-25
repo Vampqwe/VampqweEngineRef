@@ -84,14 +84,25 @@ class PageImportWriter
             // блоков возвращаются через ArrayObject (callback не может
             // вернуть несколько значений).
             $out = new \ArrayObject(['warnings' => [], 'row_reports' => []]);
-            $pageId = (int) $this->db->transaction(function () use ($record, $parsed, $out): int {
-                $pid = $this->pageService->createPage($record);
-                $warnings = [];
-                $out['row_reports'] = $this->writeRowSets($parsed, $pid, $warnings);
-                $out['warnings'] = $warnings;
+            try {
+                $pageId = (int) $this->db->transaction(function () use ($record, $parsed, $out): int {
+                    $pid = $this->pageService->createPage($record);
+                    $warnings = [];
+                    $out['row_reports'] = $this->writeRowSets($parsed, $pid, $warnings);
+                    $out['warnings'] = $warnings;
 
-                return $pid;
-            });
+                    return $pid;
+                });
+            } catch (\Throwable $e) {
+                // Транзакция отменена целиком (страница не создана) — пробрасываем
+                // причину наружу: иначе воркер/контроллер показывали «успех» с пустой БД.
+                throw new \RuntimeException(
+                    'Импорт отменён: ошибка записи страницы/блоков в транзакции — '
+                    . $e->getMessage(),
+                    0,
+                    $e
+                );
+            }
             $warnings = (array) $out['warnings'];
             $rowReports = (array) $out['row_reports'];
         } else {
@@ -310,9 +321,33 @@ class PageImportWriter
         }
 
         if ($this->importService === null) {
-            // Резервный путь без ImportService — прежнее поведение (schemas)
-            if (!empty($parsed['schemas'])) {
-                $this->pageService->addSchemaForPage($pageId, (array) $parsed['schemas']);
+            // Резервный путь без ImportService: строки пишутся напрямую через
+            // PageService::addSchemaForPage() (та же таблица schema_org).
+            // Раньше здесь был баг: читался ключ 'schemas', которого в контракте
+            // parse() нет (данные лежат в row_sets['schema_org']) — схемы
+            // «находились» парсером и светились в сводке, но в БД не попадали.
+            $fallbackRows = [];
+            foreach ($rowSets as $table => $rows) {
+                if ((string) $table === 'schema_org' && is_array($rows)) {
+                    $fallbackRows = array_merge($fallbackRows, $rows);
+                }
+            }
+            if ($fallbackRows !== []) {
+                try {
+                    $this->pageService->addSchemaForPage($pageId, $fallbackRows);
+                    $reports['schema_org'] = [
+                        'inserted' => count($fallbackRows),
+                        'skipped' => 0,
+                        'errors' => [],
+                    ];
+                } catch (\Throwable $e) {
+                    $warnings[] = 'Ошибка записи схем (резервный путь): ' . $e->getMessage();
+                    $reports['schema_org'] = [
+                        'inserted' => 0,
+                        'skipped' => count($fallbackRows),
+                        'errors' => [$e->getMessage()],
+                    ];
+                }
             }
 
             return $reports;
