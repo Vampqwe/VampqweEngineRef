@@ -52,7 +52,7 @@ class AdminService
      */
     private function loadLimits(): array
     {
-        $file = dirname(__DIR__, 6) . '/config/admin-dashboard.php';
+        $file = \Core\System\Security\PathResolver::resolveConfigFile('admin-dashboard.php');
         $cfg = is_file($file) ? require $file : [];
 
         return [

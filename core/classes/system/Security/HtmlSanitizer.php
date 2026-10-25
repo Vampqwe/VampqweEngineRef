@@ -43,10 +43,31 @@ class HtmlSanitizer
     private static function config(): array
     {
         if (self::$config === null) {
-            $path = dirname(__DIR__, 5) . '/config/html-sanitizer.php';
+            $path = self::engineConfigPath('html-sanitizer.php');
             self::$config = is_file($path) ? require $path : [];
         }
         return self::$config;
+    }
+
+    /**
+     * Путь к файлу конфига движка внутри config/ корня проекта.
+     *
+     * HtmlSanitizer работает и в CLI-скриптах, где ProjectRoot может быть
+     * не зафиксирован явно: сначала берём зафиксированный корень/APP_ROOT_PATH,
+     * при недостижимости — fallback от расположения файлов движка
+     * (core/classes/system/Security → 4 уровня вверх). Никаких require_once
+     * вне config/ — только чтение уже загруженного класса через FQN.
+     */
+    private static function engineConfigPath(string $fileName): string
+    {
+        try {
+            return PathResolver::resolveConfigFile($fileName);
+        } catch (\Throwable) {
+            // Резолвер не смог определить корень (например, ProjectRoot ещё
+            // не детектирован) — консервативный путь от файлов движка.
+            return dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'config'
+                . DIRECTORY_SEPARATOR . $fileName;
+        }
     }
 
     /** Теги, полностью удаляемые вместе с содержимым */

@@ -67,6 +67,34 @@ final class PathResolver
     }
 
     /**
+     * Каталог config/ внутри корня проекта (единая точка резолва путей
+     * конфигов движка: page-content.php, import-parser.php,
+     * html-sanitizer.php и т.п.).
+     *
+     * Исторически потребители вычисляли путь сами через dirname(__DIR__, N)
+     * от расположения своего файла; при переносе классов между уровнями
+     * каталогов (или нестандартном размещении проекта, напр. OSPanel) это
+     * давало off-by-one и «Failed opening required <root>/../config/...».
+     * Резолв всегда идёт от канонического корня проекта (APP_ROOT_PATH).
+     */
+    public static function resolveConfigDir(string $rootPath = ''): string
+    {
+        if ($rootPath === '') {
+            $rootPath = self::normalizeRootPath('');
+        }
+
+        return rtrim($rootPath, '/\\') . DIRECTORY_SEPARATOR . 'config';
+    }
+
+    /**
+     * Полный путь к файлу конфига внутри config/ (см. resolveConfigDir()).
+     */
+    public static function resolveConfigFile(string $fileName, string $rootPath = ''): string
+    {
+        return self::resolveConfigDir($rootPath) . DIRECTORY_SEPARATOR . ltrim($fileName, '/\\');
+    }
+
+    /**
      * Каталог storage/ внутри корня проекта. Если корень сам указывает
      * на storage-каталог (маловероятный, но исторический вариант) —
      * возвращаем его как есть, без вложенного storage/storage.
