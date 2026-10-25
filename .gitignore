@@ -5,3 +5,5 @@
 logs/*.log
 storage/backups/
 /.phpunit.cache/
+
+/.phpunit.cache/
