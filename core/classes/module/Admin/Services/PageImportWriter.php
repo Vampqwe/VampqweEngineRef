@@ -21,6 +21,7 @@ namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
 use Core\System\DataBase\DataBase;
+use Core\System\Parser\HtmlParser;
 use Core\System\Security\HtmlSanitizer;
 use Core\System\Security\PathResolver;
 
@@ -154,7 +155,24 @@ class PageImportWriter
     {
         $baseUrl = rtrim((string) $this->config->get('APP_BASE_URL', ''), '/');
         $slug = (string) ($parsed['slug'] ?? '');
-        $canonical = $baseUrl . '/' . ltrim($slug, '/');
+
+        // Режим canonical ('canonical_mode' в config/import-parser.php):
+        //  - 'derived' (по умолчанию): canonical = APP_BASE_URL + slug;
+        //  - 'source': canonical берётся из <link rel="canonical"> исходника
+        //    целиком (значение уже извлечено блоком 'canonical'), а slug —
+        //    из path этого URL (source: 'slug_from_canonical').
+        $rulesFile = PathResolver::resolveConfigFile('import-parser.php');
+        $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
+        $mode = (string) ($rules['canonical_mode'] ?? 'derived');
+        $sourceCanonical = trim((string) ($parsed['values']['canonical'] ?? ''));
+        if ($mode === 'source' && $sourceCanonical !== '') {
+            $canonical = $sourceCanonical;
+            if ($slug === '') {
+                $slug = HtmlParser::slugFromCanonicalUrl($sourceCanonical);
+            }
+        } else {
+            $canonical = $baseUrl . '/' . ltrim($slug, '/');
+        }
 
         // JS-скрипты: дефолтный скрипт из config/page-content.php + извлечённые со страницы
         $pageCfg = require PathResolver::resolveConfigFile('page-content.php');
@@ -230,11 +248,11 @@ class PageImportWriter
     public function prepareContent(string $html, bool $rawSliceCandidate = false): string
     {
         if ($rawSliceCandidate) {
-            $rulesFile = PathResolver::resolveConfigFile('import-parser.php');
-            $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
-            if (($rules['content_raw'] ?? false) === true) {
-                return $html;
-            }
+            // ⚠️ ПРАВИЛО ДОВЕРЕННОГО ИМПОРТА — НЕ ТРОГАТЬ !!!
+            // Побитный срез исходника проходит БЕЗ обработки: ни снятия
+            // обёртки (stripDocumentWrapper), ни санитизации, ни обрезки.
+            // В БД попадает ровно то, что было между маркерами в файле.
+            return $html;
         }
 
         return $this->sanitizeContent($this->parser->stripDocumentWrapper($html));

@@ -40,7 +40,7 @@ use DOMXPath;
 class HtmlParser extends AbstractParser
 {
     /** @var string[] Разрешённые описания source в блоках конфига */
-    private const KNOWN_SOURCES = ['slug_from_title'];
+    private const KNOWN_SOURCES = ['slug_from_title', 'slug_from_canonical'];
 
     /** @var string[] Разрешённые типы блоков */
     public const KNOWN_BLOCK_TYPES = ['marker', 'xpath', 'meta', 'schema', 'script', 'title'];
@@ -152,21 +152,42 @@ class HtmlParser extends AbstractParser
             }
         }
 
-        // slug может генерироваться из title
+        // slug может генерироваться из title (slug_from_title) либо
+        // вырезаться из path canonical-ссылки исходника (slug_from_canonical).
         if (isset($values['slug']) && (!is_string($values['slug']) || $values['slug'] === '')) {
             unset($values['slug']);
         }
         if (!isset($values['slug'])) {
-            $slug = $this->generateSlug((string) ($values['title'] ?? ''));
+            $slug = '';
+            foreach ($this->blocks as $block) {
+                if (!is_array($block) || (string) ($block['source'] ?? '') !== 'slug_from_canonical') {
+                    continue;
+                }
+                $canonicalSrc = (string) ($values['canonical'] ?? '');
+                if ($canonicalSrc === '') {
+                    $target = (array) ($block['target'] ?? []);
+                    $column = (string) ($target['column'] ?? '');
+                    $canonicalSrc = $column !== '' ? (string) ($values[$column] ?? '') : '';
+                }
+                $slug = self::slugFromCanonicalUrl($canonicalSrc);
+                break;
+            }
+            if ($slug === '') {
+                $slug = $this->generateSlug((string) ($values['title'] ?? ''));
+            }
             if ($slug === '') {
                 $slug = 'import-' . substr(md5(((string) ($values['title'] ?? '')) . microtime()), 0, 8);
             }
             $values['slug'] = $slug;
         }
 
-        // Побитный режим ('content_raw' => true): content = точный срез
+        // Побитный режим ('content_raw' => true): content = ТОЧНЫЙ срез
         // исходного HTML между маркерами контентного блока (включая сами
         // комментарии), без DOM-нормализации и обёрток.
+        // ⚠️ ПРАВИЛО ДОВЕРЕННОГО ИМПОРТА — НЕ ТРОГАТЬ: на этом уровне цепочки
+        // из контента не вырезается ничего (ни <style>, ни картинок, ни
+        // «мусорных» тегов). Любая санитизация/обрезка ниже по потоку должна
+        // обходить raw_slice стороной (см. PageImportWriter::prepareContent).
         if (($this->rules['content_raw'] ?? false) === true) {
             $rawSlice = $this->rawMarkerSlice($sourceHtml, $this->blocks);
             if ($rawSlice !== null) {
@@ -501,13 +522,14 @@ class HtmlParser extends AbstractParser
             ? substr($html, $sliceStart)
             : substr($html, $sliceStart, $endPos - $sliceStart);
 
-        // Если закрывающий маркер не найден — отсекаем хвост документа
-        // (footer и закрывающие теги), иначе мусор попадёт в БД.
-        if ($endPos === null) {
-            $slice = $this->trimUnclosedTail((string) $slice);
-        }
-
-        return trim($slice);
+        // ⚠️ ПРАВИЛО ДОВЕРЕННОГО ИМПОРТА — НЕ ТРОГАТЬ !!!
+        // Контент сохраняется ПОБИТНО: никакого trim(), никакого
+        // trimUnclosedTail(), никаких regex-вырезаний хвостов/обёрток.
+        // Срез байт-в-байт равен исходнику между маркерами (включая сами
+        // маркеры). Обрезка «мусора» допускается только явным правилом
+        // блока ('trim'/'transform') в конфиге — по умолчанию ничего
+        // не удаляется. Правило рассчитано на доверенных лиц.
+        return $slice;
     }
 
     /**
@@ -711,13 +733,9 @@ class HtmlParser extends AbstractParser
     {
         $expr = (string) ($block['expression'] ?? '');
         if ($expr !== '') {
-            $nodes = $xpath->query('//meta[@name="' . $expr . '"]/@content');
-            if ($nodes->length > 0) {
-                return trim($nodes->item(0)->textContent);
-            }
-            $nodes = $xpath->query('//meta[@property="' . $expr . '"]/@content');
-            if ($nodes->length > 0) {
-                return trim($nodes->item(0)->textContent);
+            $value = $this->matchMetaNode($xpath, $expr);
+            if ($value !== null) {
+                return $value;
             }
         }
 
@@ -725,21 +743,64 @@ class HtmlParser extends AbstractParser
             if (!is_array($fb)) {
                 continue;
             }
-            if (isset($fb['name'])) {
-                $nodes = $xpath->query('//meta[@name="' . $fb['name'] . '"]/@content');
-                if ($nodes->length > 0) {
-                    return trim($nodes->item(0)->textContent);
-                }
+            $fbName = (string) ($fb['name'] ?? $fb['property'] ?? '');
+            if ($fbName === '') {
+                continue;
             }
-            if (isset($fb['property'])) {
-                $nodes = $xpath->query('//meta[@property="' . $fb['property'] . '"]/@content');
-                if ($nodes->length > 0) {
-                    return trim($nodes->item(0)->textContent);
-                }
+            $value = $this->matchMetaNode($xpath, $fbName);
+            if ($value !== null) {
+                return $value;
             }
         }
 
         return '';
+    }
+
+    /**
+     * Поиск значения мета-тега по имени: <meta name="X" content>,
+     * <meta property="X" content> или <link rel="X" href> (для link —
+     * извлекается href). Возвращает null, если ничего не найдено.
+     */
+    private function matchMetaNode(DOMXPath $xpath, string $name): ?string
+    {
+        $queries = [
+            '//meta[@name="' . $name . '"]/@content',
+            '//meta[@property="' . $name . '"]/@content',
+            '//link[@rel="' . $name . '"]/@href',
+        ];
+        foreach ($queries as $q) {
+            $nodes = @$xpath->query($q);
+            if ($nodes !== false && $nodes->length > 0) {
+                $value = trim($nodes->item(0)->textContent);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Slug из канонического URL: берётся путь после домена, срезаются
+     * ведущие/замыкающие слеши, строка запроса и якорь.
+     * Пример: https://site.by/uslugi/zabor-krovi/ -> 'uslugi/zabor-krovi'.
+     */
+    public static function slugFromCanonicalUrl(string $canonical): string
+    {
+        $canonical = trim($canonical);
+        if ($canonical === '') {
+            return '';
+        }
+        $path = parse_url($canonical, PHP_URL_PATH);
+        if (!is_string($path) || $path === '') {
+            // Относительный canonical без схемы — считаем его путём как есть
+            $path = $canonical;
+        }
+        $path = (string) preg_replace('~/+$~', '', $path);
+        $path = (string) preg_replace('~^/+~', '', $path);
+
+        return trim($path);
     }
 
     /**
