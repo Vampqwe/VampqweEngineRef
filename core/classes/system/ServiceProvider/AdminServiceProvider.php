@@ -41,6 +41,8 @@ use Core\Module\Admin\Services\PageService;
 use Core\System\Security\HtmlSanitizer;
 use Core\Module\Admin\Controllers\ImportController;
 use Core\Module\Admin\Services\HtmlImportParser;
+use Core\Module\Admin\Services\ImportService;
+use Core\Module\Admin\Services\PageImportWriter;
 use Core\Module\Admin\Controllers\MenuController;
 use Core\Module\Admin\Services\MenuAdminService;
 use Core\Module\Admin\Controllers\SchemaController;
@@ -84,6 +86,21 @@ class AdminServiceProvider extends ServiceProvider
         $this->container->singleton(HtmlImportParser::class, fn() =>
             new HtmlImportParser($config)
         );
+
+        // Импорт страниц: generic-запись блоков в БД и единая точка записи
+        // импорта (web confirm + фоновый воркер используют один и тот же код).
+        $this->container->singleton(ImportService::class, fn() =>
+            new ImportService($db)
+        );
+        $this->container->singleton(PageImportWriter::class, fn() =>
+            new PageImportWriter(
+                $this->container->get(HtmlImportParser::class),
+                $this->container->get(PageService::class),
+                $config,
+                $this->container->get(ImportService::class)
+            )
+        );
+
         $this->container->singleton(MenuAdminService::class, fn() =>
             new MenuAdminService($db)
         );
@@ -202,7 +219,9 @@ class AdminServiceProvider extends ServiceProvider
             $container->get(AdminService::class),
             $container->get(Template::class),
             $container->get(Config::class),
-            $container->get(SecurityManager::class)
+            $container->get(SecurityManager::class),
+            null,
+            $container->get(ImportService::class)
         );
 
         $menuController = static fn(): MenuController => new MenuController(
