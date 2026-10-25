@@ -1,1 +1,9 @@
+*.bundle
+# Локальные секреты и runtime-артефакты (в CI отсутствуют по security gate)
+config.env
+logs/*.log
 .phpunit.cache/
+storage/cache/templates/
+storage/.rate_limits/
+storage/queue/failed/
+storage/import/tmp/
