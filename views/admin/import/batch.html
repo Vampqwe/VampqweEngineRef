@@ -1,0 +1,130 @@
+@extends('admin/layouts/admin')
+
+@section('page_title')
+Пакетный импорт страниц
+@endsection
+
+@section('page_subtitle')
+Импорт HTML-файлов из папки в storage с отчётом пригодности
+@endsection
+
+@section('content')
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Папка в storage</h3>
+    </div>
+    <div class="card-body">
+        @if(!empty($flash['error']))
+        <div class="flash-message flash-error"><?= htmlspecialchars($flash['error'], ENT_QUOTES, 'UTF-8') ?></div>
+        @endif
+
+        @if(!empty($flash['success']))
+        <div class="flash-message flash-success"><?= htmlspecialchars($flash['success'], ENT_QUOTES, 'UTF-8') ?></div>
+        @endif
+
+        @if(!empty($flash['warning']))
+        <div class="flash-message flash-warning"><?= htmlspecialchars($flash['warning'], ENT_QUOTES, 'UTF-8') ?></div>
+        @endif
+
+        <div style="background: var(--bg-primary); padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem;">
+            <h4 style="color: var(--teal-light); margin-bottom: 1rem;">Как это работает:</h4>
+            <ol style="color: var(--silver); margin-left: 1.5rem; line-height: 1.8;">
+                <li>Создайте папку внутри <code>storage/</code> (например <code>storage/pages</code>) и закиньте туда HTML-файлы страниц</li>
+                <li>Выберите папку и нажмите «Просканировать» — система прогонит каждый файл через парсер и покажет короткий отчёт: что можно импортировать, а что нет</li>
+                <li>Нажмите «Импортировать годные файлы» — импорт выполнится по тем же правилам, что и одиночный (транзакция, блоки <code>config/import-parser.php</code>, схемы schema_org)</li>
+                <li>Успешно импортированные файлы будут перенесены в <code>storage/{папка}/added</code></li>
+            </ol>
+        </div>
+
+        <form method="POST" action="/admin/import/batch-scan">
+            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+
+            <div class="form-group">
+                <label for="folder">Папка в storage <span class="required">*</span></label>
+                <?php if (!empty($folders)): ?>
+                <select id="folder" name="folder" required>
+                    <option value="">— выберите папку —</option>
+                    <?php foreach ($folders as $f): ?>
+                    <option value="<?= htmlspecialchars($f['name'], ENT_QUOTES, 'UTF-8') ?>"<?= ($folder === $f['name']) ? ' selected' : '' ?>>
+                        <?= htmlspecialchars($f['name'], ENT_QUOTES, 'UTF-8') ?> (<?= (int) $f['files'] ?> файлов)
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+                <?php else: ?>
+                <p style="color: var(--silver);">Подпапок с HTML-файлами в <code>storage/</code> пока нет. Создайте, например, <code>storage/pages</code>.</p>
+                <?php endif; ?>
+                <small>Служебные папки (cache, logs, queue, added) недоступны как источник.</small>
+            </div>
+
+            <div class="form-actions">
+                <a href="/admin/import" class="btn btn-secondary">← Одиночный импорт</a>
+                <a href="/admin/pages" class="btn btn-secondary">К страницам</a>
+                <button type="submit" class="btn btn-primary">🔍 Просканировать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if(!empty($scan))
+<?php
+    $statusLabels = [
+        'ok'          => ['✅ Можно импортировать', 'flash-success'],
+        'exists'      => ['⛔ Slug занят', 'flash-error'],
+        'no_slug'     => ['⛔ Нет slug', 'flash-error'],
+        'no_title'    => ['⚠️ Нет заголовка', 'flash-warning'],
+        'parse_error' => ['⛔ Ошибка парсинга', 'flash-error'],
+        'too_large'   => ['⛔ Превышен лимит размера', 'flash-error'],
+        'unreadable'  => ['⛔ Файл не читается', 'flash-error'],
+        'no_files'    => ['ℹ️ Папка пуста или недоступна', 'flash-warning'],
+    ];
+?>
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Отчёт сканирования: storage/<?= htmlspecialchars((string) ($scan['folder'] ?? ''), ENT_QUOTES, 'UTF-8') ?></h3>
+    </div>
+    <div class="card-body">
+        <p style="color: var(--silver); margin-bottom: 1rem;">
+            Всего файлов: <strong><?= (int) ($scan['total'] ?? 0) ?></strong> ·
+            Пригодно к импорту: <strong><?= (int) ($scan['importable'] ?? 0) ?></strong>
+        </p>
+
+        <table class="table" style="width:100%;">
+            <thead>
+                <tr>
+                    <th>Файл</th>
+                    <th>Заголовок</th>
+                    <th>Slug</th>
+                    <th>Схемы</th>
+                    <th>Статус</th>
+                    <th>Причина</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach (($scan['items'] ?? []) as $item): ?>
+                <?php $label = $statusLabels[(string) $item['status']] ?? [$item['status'], '']; ?>
+                <tr>
+                    <td><?= htmlspecialchars((string) $item['file'], ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string) $item['title'], ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><code><?= htmlspecialchars((string) $item['slug'], ENT_QUOTES, 'UTF-8') ?></code></td>
+                    <td><?= (int) $item['schemas'] ?></td>
+                    <td><span class="<?= htmlspecialchars((string) $label[1], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string) $label[0], ENT_QUOTES, 'UTF-8') ?></span></td>
+                    <td><?= htmlspecialchars((string) $item['reason'], ENT_QUOTES, 'UTF-8') ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <form method="POST" action="/admin/import/batch-confirm" style="margin-top: 1.5rem;">
+            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="folder" value="<?= htmlspecialchars((string) ($scan['folder'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary"<?= (int) ($scan['importable'] ?? 0) > 0 ? '' : ' disabled' ?>>
+                    🚀 Импортировать годные файлы (<?= (int) ($scan['importable'] ?? 0) ?>)
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+@endif
+@endsection
