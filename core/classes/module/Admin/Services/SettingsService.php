@@ -195,6 +195,89 @@ class SettingsService
             'min' => 5,
             'max' => 100,
         ],
+
+        // ─── Логгер (параметры Core\System\Logger\Logger) ───
+        'LOG_FILE' => [
+            'type' => 'text',
+            'label' => 'Файл лога',
+            'description' => 'Путь относительно корня проекта (например, logs/app.log). Пусто = значение по умолчанию.',
+            'section' => 'logging',
+        ],
+        'LOG_MAX_SIZE' => [
+            'type' => 'int',
+            'label' => 'Максимальный размер лога (байт)',
+            'description' => 'При превышении выполняется ротация. По умолчанию 10485760 (10 МБ).',
+            'section' => 'logging',
+            'min' => 10240,
+            'max' => 1073741824,
+        ],
+        'LOG_ROTATION' => [
+            'type' => 'bool',
+            'label' => 'Ротация логов',
+            'description' => 'Автоповорот файла лога при достижении LOG_MAX_SIZE.',
+            'section' => 'logging',
+        ],
+        'LOG_DATE_FORMAT' => [
+            'type' => 'text',
+            'label' => 'Формат даты в логах',
+            'description' => 'Формат PHP date(), например Y-m-d H:i:s.u.',
+            'section' => 'logging',
+        ],
+
+        // ─── Импортер страниц (управляют config/import-parser.php;
+        //     детальная настройка блоков — на странице «Настройки импортера») ───
+        'IMPORT_CANONICAL_MODE' => [
+            'type' => 'select',
+            'label' => 'Режим canonical при импорте',
+            'description' => 'derived: canonical = APP_BASE_URL + slug (slug из title). source: canonical берётся из <link rel="canonical"> целиком, slug вырезается из его пути.',
+            'section' => 'importer',
+            'options' => ['source', 'derived'],
+        ],
+        'IMPORT_CONTENT_RAW' => [
+            'type' => 'bool',
+            'label' => 'Побитный импорт контента',
+            'description' => '⚠️ Правило доверенного импорта: контент ложится в БД байт-в-байт без санитайзера. Только для доверенных источников!',
+            'section' => 'importer',
+        ],
+        'IMPORT_MAX_FILE_SIZE' => [
+            'type' => 'int',
+            'label' => 'Максимум размера HTML-файла (байт)',
+            'description' => 'Ограничение загружаемого файла импорта. По умолчанию 20971520 (20 МБ).',
+            'section' => 'importer',
+            'min' => 10240,
+            'max' => 268435456,
+        ],
+        'IMPORT_MAX_IMAGE_SIZE' => [
+            'type' => 'int',
+            'label' => 'Максимум размера изображения (байт)',
+            'description' => 'Ограничение скачиваемых картинок. По умолчанию 10485760 (10 МБ).',
+            'section' => 'importer',
+            'min' => 10240,
+            'max' => 104857600,
+        ],
+    ];
+
+    /**
+     * Ключи формы → имена параметров в config/import-parser.php.
+     * Эти настройки хранятся НЕ в config.env, а в PHP-конфиге импортера;
+     * запись выполняется round-trip перезаписью файла (ConfigFileParser).
+     */
+    private const IMPORTER_CONFIG_KEYS = [
+        'IMPORT_CANONICAL_MODE' => 'canonical_mode',
+        'IMPORT_CONTENT_RAW' => 'content_raw',
+        'IMPORT_MAX_FILE_SIZE' => 'max_file_size',
+        'IMPORT_MAX_IMAGE_SIZE' => 'max_image_size',
+    ];
+
+    /**
+     * Значения по умолчанию для ключей импортера (совпадают с дефолтами
+     * движка; используются если параметр ещё не записан в конфиг-файл).
+     */
+    private const IMPORTER_DEFAULTS = [
+        'IMPORT_CANONICAL_MODE' => 'source',
+        'IMPORT_CONTENT_RAW' => 'true',
+        'IMPORT_MAX_FILE_SIZE' => '20971520',
+        'IMPORT_MAX_IMAGE_SIZE' => '10485760',
     ];
 
     public function __construct(Config $config, SecurityManager $security, DataBase $db)
@@ -213,13 +296,17 @@ class SettingsService
     public function getSettingsGrouped(): array
     {
         $sections = [
-            'app' => ['label' => 'Приложение', 'icon' => '🌐', 'fields' => []],
+            'app' => ['label' => 'Настройки сайта', 'icon' => '🌐', 'fields' => []],
             'security' => ['label' => 'Безопасность', 'icon' => '🔒', 'fields' => []],
             'session' => ['label' => 'Сессии', 'icon' => '🍪', 'fields' => []],
-            'logging' => ['label' => 'Логирование', 'icon' => '📝', 'fields' => []],
+            'logging' => ['label' => 'Логгер', 'icon' => '📝', 'fields' => []],
             'template' => ['label' => 'Шаблоны', 'icon' => '🎨', 'fields' => []],
             'admin' => ['label' => 'Админ-панель', 'icon' => '🛠️', 'fields' => []],
+            'importer' => ['label' => 'Настройки импортера', 'icon' => '📥', 'fields' => []],
         ];
+
+        // Текущие значения параметров импортера из config/import-parser.php.
+        $importerValues = $this->readImporterConfigValues();
 
         foreach (self::ALLOWED_KEYS as $key => $meta) {
             $section = $meta['section'] ?? 'app';
@@ -227,7 +314,17 @@ class SettingsService
                 $sections[$section] = ['label' => $section, 'icon' => '⚙️', 'fields' => []];
             }
 
-            $value = $this->config->get($key, '');
+            if ($section === 'importer') {
+                // Значение берётся из import-parser.php (дефолт — если параметра там нет).
+                $cfgKey = self::IMPORTER_CONFIG_KEYS[$key];
+                $value = $importerValues[$cfgKey] ?? self::IMPORTER_DEFAULTS[$cfgKey] ?? '';
+                if (is_bool($value)) {
+                    $value = $value ? 'true' : 'false';
+                }
+                $value = (string) $value;
+            } else {
+                $value = $this->config->get($key, '');
+            }
             $sections[$section]['fields'][$key] = array_merge($meta, [
                 'key' => $key,
                 'value' => $value,
@@ -235,6 +332,115 @@ class SettingsService
         }
 
         return $sections;
+    }
+
+    /**
+     * Текущее (фактическое) значение ключа формы: для настроек импортера —
+     * из config/import-parser.php, для остальных — из config.env.
+     */
+    private function getCurrentValue(string $key): string
+    {
+        if (isset(self::IMPORTER_CONFIG_KEYS[$key])) {
+            $cfgKey = self::IMPORTER_CONFIG_KEYS[$key];
+            $values = $this->readImporterConfigValues();
+            $value = $values[$cfgKey] ?? self::IMPORTER_DEFAULTS[$cfgKey] ?? '';
+            if (is_bool($value)) {
+                return $value ? 'true' : 'false';
+            }
+            return (string) $value;
+        }
+        return (string) $this->config->get($key, '');
+    }
+
+    /**
+     * Прочитать управляемые параметры из config/import-parser.php.
+     *
+     * @return array<string, mixed>
+     */
+    private function readImporterConfigValues(): array
+    {
+        $out = [];
+        try {
+            $cfg = require $this->basePath . '/config/import-parser.php';
+            if (is_array($cfg)) {
+                foreach (self::IMPORTER_CONFIG_KEYS as $cfgVal) {
+                    if (array_key_exists($cfgVal, $cfg)) {
+                        $out[$cfgVal] = $cfg[$cfgVal];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('SettingsService: cannot read import-parser config: ' . $e->getMessage());
+        }
+        return $out;
+    }
+
+    /**
+     * Round-trip запись scalars-параметров в config/import-parser.php
+     * (через токенный парсер ConfigFileParser — комментарии сохраняются).
+     *
+     * @param array<string, string> $changes ключ формы => нормализованное значение
+     * @return array{success: bool, message: string}
+     */
+    private function writeImporterConfigValues(array $changes): array
+    {
+        $file = $this->basePath . '/config/import-parser.php';
+        if (!is_file($file)) {
+            return ['success' => false, 'message' => 'Файл config/import-parser.php не найден.'];
+        }
+        if (!is_writable($file)) {
+            return ['success' => false, 'message' => 'Нет прав на запись в config/import-parser.php.'];
+        }
+
+        $php = file_get_contents($file);
+        if ($php === false) {
+            return ['success' => false, 'message' => 'Не удалось прочитать config/import-parser.php.'];
+        }
+
+        $newContent = $php;
+        foreach ($changes as $formKey => $value) {
+            $cfgKey = self::IMPORTER_CONFIG_KEYS[$formKey];
+            // PHP-литерал значения: строка в одинарных кавычках либо число/bool.
+            if (preg_match('/^-?\d+$/', $value)) {
+                $literal = $value;
+            } elseif (in_array($value, ['true', 'false'], true)) {
+                $literal = $value;
+            } else {
+                $literal = "'" . str_replace(["\\", "'"], ["\\\\", "\\'"], $value) . "'";
+            }
+            $pattern = "/^(\s*'" . preg_quote($cfgKey, '/') . "'\s*=>\s*)([^,;]+)(,)/m";
+            if (preg_match($pattern, $newContent)) {
+                $newContent = preg_replace_callback(
+                    $pattern,
+                    fn(array $m): string => $m[1] . $literal . $m[3],
+                    $newContent
+                );
+            } else {
+                // Параметр отсутствует — вставим в начало массива после "return [".
+                $newContent = preg_replace(
+                    '/return\s*\[\n/',
+                    "return [\n    '" . $cfgKey . "' => " . $literal . ",\n",
+                    $newContent,
+                    1
+                );
+            }
+        }
+
+        // Валидация синтаксиса до записи: разбираем результат как PHP-массив.
+        // Безопасно: eval выполняется на временном содержимом, значения строго
+        // из whitelist и прошли validateAndNormalize (без переносов строк).
+        $tmp = @tempnam(sys_get_temp_dir(), 'imp-cfg-') . '.php';
+        file_put_contents($tmp, $newContent);
+        $check = @include $tmp;
+        @unlink($tmp);
+        if (!is_array($check)) {
+            return ['success' => false, 'message' => 'После изменений config/import-parser.php стал невалидным — запись отменена.'];
+        }
+
+        if (file_put_contents($file, $newContent) === false) {
+            return ['success' => false, 'message' => 'Не удалось записать config/import-parser.php.'];
+        }
+        return ['success' => true, 'message' => 'Настройки импортера сохранены.'];
     }
 
     /**
@@ -264,7 +470,7 @@ class SettingsService
                 continue; // Ошибка валидации
             }
 
-            $currentValue = $this->config->get($key, '');
+            $currentValue = $this->getCurrentValue($key);
             if ((string) $currentValue !== (string) $value) {
                 $changes[$key] = $value;
                 $changed++;
@@ -279,17 +485,40 @@ class SettingsService
             return ['ok' => true, 'errors' => [], 'changed' => 0];
         }
 
+        // Разделяем изменения: config.env и config/import-parser.php.
+        $envChanges = [];
+        $importerChanges = [];
+        foreach ($changes as $key => $value) {
+            if (isset(self::IMPORTER_CONFIG_KEYS[$key])) {
+                $importerChanges[$key] = $value;
+            } else {
+                $envChanges[$key] = $value;
+            }
+        }
+
         // Бэкап config.env перед записью
-        $this->backupConfig();
+        if ($envChanges !== []) {
+            $this->backupConfig();
+        }
 
         // Запись в config.env
-        $result = $this->writeConfigValues($changes);
-        if (!$result['success']) {
-            return ['ok' => false, 'errors' => [$result['message']], 'changed' => 0];
+        if ($envChanges !== []) {
+            $result = $this->writeConfigValues($envChanges);
+            if (!$result['success']) {
+                return ['ok' => false, 'errors' => [$result['message']], 'changed' => 0];
+            }
+        }
+
+        // Запись параметров импортера в config/import-parser.php
+        if ($importerChanges !== []) {
+            $result = $this->writeImporterConfigValues($importerChanges);
+            if (!$result['success']) {
+                return ['ok' => false, 'errors' => [$result['message']], 'changed' => count($envChanges)];
+            }
         }
         // Если изменился APP_NAME — обновить брендовые данные в БД
-        if (isset($changes['APP_NAME'])) {
-            $rebuild = $this->rebuildBrandData($changes['APP_NAME']);
+        if (isset($envChanges['APP_NAME'])) {
+            $rebuild = $this->rebuildBrandData($envChanges['APP_NAME']);
             // Можно добавить в ответ информацию о пересчёте
             $changes['_rebuild_info'] = $rebuild;
         }

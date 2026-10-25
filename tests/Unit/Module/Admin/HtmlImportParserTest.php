@@ -162,7 +162,7 @@ final class HtmlImportParserTest extends TestCase
         self::assertStringNotContainsString('>out<', (string) $parsed['values']['content']);
     }
 
-    public function testMissingEndMarkerTakesUntilFooterAndWarns(): void
+    public function testMissingEndMarkerTakesRestByteExactAndWarns(): void
     {
         $html = '<html><body><---sec---><p>keep</p><footer>tail</footer></body></html>';
 
@@ -178,7 +178,11 @@ final class HtmlImportParserTest extends TestCase
         $parsed = $parser->parse($html);
         self::assertTrue($parsed['blocks']['sec']['found']);
         self::assertStringContainsString('keep', (string) $parsed['values']['content']);
-        self::assertStringNotContainsString('tail', (string) $parsed['values']['content']);
+        // ⚠️ ПРАВИЛО ДОВЕРЕННОГО ИМПОРТА — НЕ ТРОГАТЬ: при отсутствующем
+        // закрывающем маркере берётся побитный срез до конца документа;
+        // <footer>-хвост НЕ вырезается (ранее тест проверял обрезку — она
+        // противоречит требованию байт-в-байт и удалена).
+        self::assertStringContainsString('tail', (string) $parsed['values']['content']);
         self::assertNotEmpty($parsed['warnings']);
     }
 
