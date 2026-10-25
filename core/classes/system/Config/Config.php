@@ -66,7 +66,12 @@ final class Config
 
             foreach ($lines as $line) {
                 if (preg_match('/^\s*SECURITY_ENFORCE_CONFIG_PERMS\s*=\s*(.+)$/', trim($line), $m)) {
-                    $enforcePerms = !in_array(strtolower(trim($m[1], " \t\"'")), ['false', '0', 'no', 'off'], true);
+                    // Значение нормализуется тем же EnvParser::parseValue,
+                    // что и весь конфиг ниже: кавычки ("false") и хвостовые
+                    // комментарии (false # note) не должны превращать флаг
+                    // в «истинный» и блокировать тестовые/CI-конфиги.
+                    $flagRaw = strtolower(EnvParser::parseValue(trim($m[1])));
+                    $enforcePerms = !in_array($flagRaw, ['false', '0', 'no', 'off'], true);
                     break;
                 }
             }
@@ -80,23 +85,13 @@ final class Config
         // Единая семантика .env: разбор значений делегирован модулю
         // Core\System\Parser\EnvParser (ранее здесь существовала локальная
         // копия parseValue с расходящейся обработкой кавычек — удалена).
-        foreach ($lines as $line) {
-            $line = trim($line);
-
-            if (str_starts_with($line, '#') || $line === '') {
-                continue;
-            }
-
-            if (str_contains($line, '=')) {
-                [$key, $value] = explode('=', $line, 2);
-                $key = trim($key);
-
-                if ($key === '') {
-                    continue;
-                }
-
-                $this->values[$key] = EnvParser::parseValue(trim($value));
-            }
+        // Значения нормализуются тем же EnvParser::parseValue, которым
+        // препросматривается флаг SECURITY_ENFORCE_CONFIG_PERMS выше, —
+        // иначе значение в кавычках ("false") или с хвостовым комментарием
+        // (false # note) ошибочно считалось бы «истинным» и блокировало
+        // тестовые/CI-конфиги проверкой прав.
+        foreach (EnvParser::parseLines($lines) as $key => $value) {
+            $this->values[$key] = $value;
         }
     }
 
