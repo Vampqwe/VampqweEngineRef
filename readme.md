@@ -38,7 +38,7 @@
 ├── composer.json       # только autoload + php>=8.1 + ext-dom
 ├── bin/
 │   └── install-key.php # CLI: generate/revoke ключ активации мастера установки
-├── config/             # PHP-конфиги подсистем (не env!)
+├── config/             # PHP-конфиги подсистем (не env!): admin-dashboard.php, html-sanitizer.php, import-parser.php, page-content.php — ЕДИНСТВЕННАЯ рабочая папка конфигов; core/config/ удалена. Пути в коде: dirname(__DIR__, N) от файла класса до корня (Page/System-классы N=5, Admin-классы N=6) + '/config/...'
 │   ├── admin-dashboard.php
 │   ├── html-sanitizer.php   # allowlist тегов/атрибутов для HtmlSanitizer
 │   ├── import-parser.php    # настройки HtmlImportParser
