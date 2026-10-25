@@ -149,10 +149,10 @@ final class ImportServiceTest extends TestCase
         $report = $service->writeRows(
             'schema_org',
             [
-                ['schema_type' => 'WebSite', 'json' => '{"a":1}'],
-                ['schema_type' => 'Service', 'json' => '{"b":2}'],
+                ['schema_type' => 'WebSite', 'data' => '{"a":1}'],
+                ['schema_type' => 'Service', 'data' => '{"b":2}'],
             ],
-            ['schema_type' => '{schema_type}', 'data' => '{json}', 'priority' => 10],
+            ['schema_type' => '{schema_type}', 'data' => '{data}', 'priority' => 10],
             ['page_id' => 9]
         );
 
@@ -189,6 +189,74 @@ final class ImportServiceTest extends TestCase
         self::assertSame('{"a":1}', $insert['params']['data']);
         self::assertSame('WebSite', $insert['params']['schema_type']);
         self::assertSame(9, $insert['params']['page_id']);
+    }
+
+    /**
+     * Валидация JSON перед записью: битый JSON в колонку data не должен
+     * долетать до MySQL (исключение PDO срывает транзакцию импорта) —
+     * строка пропускается с понятной ошибкой блока.
+     */
+    public function testWriteRowsSkipsInvalidJsonInSchemaData(): void
+    {
+        $db = new FakeImportDb();
+        $db->schema['schema_org'] = ['schema_type' => true, 'data' => true, 'priority' => true, 'page_id' => true];
+
+        $service = $this->makeService($db);
+        $report = $service->writeRows(
+            'schema_org',
+            [
+                ['schema_type' => 'WebSite', 'data' => '{"a":1,}'], // битый JSON
+                ['schema_type' => 'Service', 'data' => 'not json at all'],
+                ['schema_type' => 'Article', 'data' => '{"ok":true}'],
+            ],
+            ['schema_type' => '{schema_type}', 'data' => '{data}', 'priority' => 10],
+            ['page_id' => 3]
+        );
+
+        self::assertSame(1, $report['inserted']);
+        self::assertSame(2, $report['skipped']);
+        self::assertCount(2, $report['errors']);
+        self::assertStringContainsString('не является валидным', $report['errors'][0]);
+
+        $inserts = array_values(array_filter(
+            $db->queries,
+            static fn (array $q): bool => str_starts_with((string) $q['sql'], 'INSERT INTO `schema_org`')
+        ));
+        self::assertCount(1, $inserts);
+        self::assertSame('Article', $inserts[0]['params']['schema_type']);
+    }
+
+    /**
+     * Контракт SchemaService::normalizeSchema(): движок сам добавляет
+     * @context/@type при рендеринге — импорт обязан срезать эти поля
+     * верхнего уровня из JSON-LD перед записью в schema_org.data.
+     */
+    public function testWriteRowsStripsContextAndTypeFromSchemaData(): void
+    {
+        $db = new FakeImportDb();
+        $db->schema['schema_org'] = ['schema_type' => true, 'data' => true, 'priority' => true, 'page_id' => true];
+
+        $service = $this->makeService($db);
+        $report = $service->writeRows(
+            'schema_org',
+            [[
+                'schema_type' => 'BreadcrumbList',
+                'data' => '{"@context":"https://schema.org","@type":"BreadcrumbList",'
+                    . '"itemListElement":[{"@type":"ListItem","position":1,"name":"Главная"}]}',
+                'priority' => 10,
+            ]],
+            ['schema_type' => '{schema_type}', 'data' => '{data}', 'priority' => 10],
+            ['page_id' => 7]
+        );
+
+        self::assertSame(1, $report['inserted']);
+        $insert = end($db->queries);
+        $decoded = json_decode((string) $insert['params']['data'], true);
+        self::assertIsArray($decoded);
+        self::assertArrayNotHasKey('@context', $decoded);
+        self::assertArrayNotHasKey('@type', $decoded);
+        // Вложенные @type (itemListElement) сохраняются
+        self::assertSame('ListItem', $decoded['itemListElement'][0]['@type']);
     }
 
     public function testMaxRowsPerTableCap(): void

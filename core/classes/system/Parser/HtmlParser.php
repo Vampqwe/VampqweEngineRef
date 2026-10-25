@@ -404,7 +404,8 @@ class HtmlParser extends AbstractParser
                 'target' => [
                     'table' => 'schema_org',
                     'mode' => 'rows',
-                    'fields' => ['schema_type' => '{schema_type}', 'data' => '{json}', 'priority' => 10],
+                    // Плейсхолдеры = колонки строк extractSchema(): data, не json.
+                    'fields' => ['schema_type' => '{schema_type}', 'data' => '{data}', 'priority' => 10],
                 ],
             ],
             'scripts' => [
