@@ -1,0 +1,192 @@
+<?php $__template->setLayout('admin/layouts/admin'); ?>
+
+<?php $__template->startSection('page_title', ); ?>
+<?= htmlspecialchars($title ?? '', ENT_QUOTES, 'UTF-8') ?>
+<?php $__template->endSection('page_title'); ?>
+
+<?php $__template->startSection('page_subtitle', ); ?>
+Редактор страниц (HTML-редактор)
+<?php $__template->endSection('page_subtitle'); ?>
+
+<?php $__template->startSection('content', ); ?>
+<form method="POST" action="<?= $page ? '/admin/pages/' . $page['id'] . '/update' : '/admin/pages/store' ?>">
+    <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+
+    <?php if (!empty($flash['error'])): ?>
+    <div class="flash-message flash-error"><?= htmlspecialchars($flash['error'], ENT_QUOTES, 'UTF-8') ?></div>
+    <?php endif; ?>
+
+    <?php if (!empty($flash['success'])): ?>
+    <div class="flash-message flash-success"><?= htmlspecialchars($flash['success'], ENT_QUOTES, 'UTF-8') ?></div>
+    <?php endif; ?>
+
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ: КОМПАКТНЫЕ ДЕЙСТВИЯ + ДОПОЛНИТЕЛЬНО (над основными блоками) -->
+    <div class="edit-topbar">
+        <div class="edit-topbar-actions">
+            <a href="/admin/pages" class="btn btn-secondary btn-sm">← Назад к списку</a>
+            <button type="submit" class="btn btn-primary btn-sm">💾 Сохранить страницу</button>
+        </div>
+
+        <details class="card card-compact" open>
+            <summary class="card-header card-header-toggle">
+                <h3 class="card-title">Дополнительно</h3>
+            </summary>
+            <div class="card-body">
+                <div class="compact-grid">
+                    <div class="form-group">
+                        <label for="page_type">Тип страницы</label>
+                        <select id="page_type" name="page_type">
+                            <option value="article" <?= ($page['page_type'] ?? '') === 'article' ? 'selected' : '' ?>>Статья</option>
+                            <option value="page" <?= ($page['page_type'] ?? '') === 'page' ? 'selected' : '' ?>>Страница</option>
+                            <option value="home" <?= ($page['page_type'] ?? '') === 'home' ? 'selected' : '' ?>>Главная</option>
+                            <option value="hub" <?= ($page['page_type'] ?? '') === 'hub' ? 'selected' : '' ?>>Раздел</option>
+                            <option value="contact" <?= ($page['page_type'] ?? '') === 'contact' ? 'selected' : '' ?>>Контакты</option>
+                            <option value="about" <?= ($page['page_type'] ?? '') === 'about' ? 'selected' : '' ?>>О нас</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="status">Статус</label>
+                        <select id="status" name="status">
+                            <option value="draft" <?= ($page['status'] ?? '') === 'draft' ? 'selected' : '' ?>>Черновик</option>
+                            <option value="published" <?= ($page['status'] ?? '') === 'published' ? 'selected' : '' ?>>Опубликовано</option>
+                            <option value="archived" <?= ($page['status'] ?? '') === 'archived' ? 'selected' : '' ?>>Архив</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="author_id">Автор</label>
+                        <select id="author_id" name="author_id">
+                            <option value="">— Не указан —</option>
+                            <?php foreach ($authors ?? [] as $author): ?>
+                            <option value="<?= $author['id'] ?>" <?= ($page['author_id'] ?? '') == $author['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($author['name'], ENT_QUOTES, 'UTF-8') ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reading_time">Время чтения (мин)</label>
+                        <input type="number" id="reading_time" name="reading_time" value="<?= $page['reading_time'] ?? '' ?>" min="1" placeholder="5">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="sort_order">Порядок сортировки</label>
+                        <input type="number" id="sort_order" name="sort_order" value="<?= $page['sort_order'] ?? 0 ?>">
+                        <small>Чем меньше число, тем выше в списке</small>
+                    </div>
+
+                    <div class="form-group checkbox">
+                        <label>
+                            <input type="checkbox" name="is_in_menu" value="1" <?= ($page['is_in_menu'] ?? 0) == 1 ? 'checked' : '' ?>>
+                            Показывать в меню навигации
+                        </label>
+                    </div>
+
+                    <div class="form-group compact-full">
+                        <label for="scripts">Дополнительные скрипты (через запятую)</label>
+                        <input type="text" id="scripts" name="scripts" value="<?= htmlspecialchars($page['scripts'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="/assets/js/custom.js, /assets/js/map.js">
+                    </div>
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <div class="form-grid">
+        <!-- ОСНОВНАЯ ИНФОРМАЦИЯ -->
+        <div>
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Основная информация</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="title">Заголовок <span class="required">*</span></label>
+                        <input type="text" id="title" name="title" value="<?= htmlspecialchars($page['title'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required placeholder="Например: Ветеринарная клиника в Минске">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="slug">Slug <span class="required">*</span></label>
+                        <input type="text" id="slug" name="slug" value="<?= htmlspecialchars($page['slug'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required placeholder="vet-clinika-minsk">
+                        <small>URL-идентификатор страницы (только латиница, цифры и дефисы)</small>
+                    </div>
+
+						<div class="form-group">
+                                                        <label>Содержание</label>
+
+                                                        <?php
+                        $rawContent = (string) ($page['content'] ?? '');
+                        // Режим обработки контента берём из реального конфига —
+                        // подпись под редактором не должна расходиться с поведением бэкенда.
+                        $contentCfg = @include dirname(__DIR__, 3) . '/config/page-content.php';
+                        $contentMode = is_array($contentCfg) ? (string) ($contentCfg['content_mode'] ?? 'sanitize') : 'sanitize';
+                    ?>
+
+                                                        <!-- Единое поле: HTML-редактор (исходный код с подсветкой ссылок).
+                                                             Визуального WYSIWYG-редактора в сборке нет -->
+                                                        <textarea id="content" name="content" class="editor-textarea" rows="24" spellcheck="false" placeholder="<section class=&quot;section&quot;> ... </section>"><?= htmlspecialchars($rawContent, ENT_QUOTES, 'UTF-8') ?></textarea>
+                                                        <?php if ($contentMode === 'raw'): ?>
+                                                        <small>Режим «raw»: контент сохраняется в БД как есть — все теги, классы и inline-styles остаются без изменений.</small>
+                                                        <?php else: ?>
+                                                        <small>Режим «sanitize»: при сохранении контент проходит через HtmlSanitizer (недоверенные теги/атрибуты вырезаются), поэтому разметка может быть изменена.</small>
+                                                        <?php endif; ?>
+                                                </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- SEO НАСТРОЙКИ -->
+        <div>
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">SEO настройки</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="description">Meta Description</label>
+                        <textarea id="description" name="description" rows="3" placeholder="Краткое описание страницы для поисковиков"><?= htmlspecialchars($page['description'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="keywords">Meta Keywords</label>
+                        <input type="text" id="keywords" name="keywords" value="<?= htmlspecialchars($page['keywords'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="ветеринар, минск, клиника">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="canonical">Canonical URL</label>
+                        <input type="url" id="canonical" name="canonical" value="<?= htmlspecialchars($page['canonical'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="https://example.com/page">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="og_title">OG Title</label>
+                        <input type="text" id="og_title" name="og_title" value="<?= htmlspecialchars($page['og_title'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="Заголовок для соцсетей">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="og_description">OG Description</label>
+                        <textarea id="og_description" name="og_description" rows="2" placeholder="Описание для соцсетей"><?= htmlspecialchars($page['og_description'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="og_image">OG Image URL</label>
+                        <input type="url" id="og_image" name="og_image" value="<?= htmlspecialchars($page['og_image'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="https://example.com/image.jpg">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="meta_robots">Meta Robots</label>
+                        <select id="meta_robots" name="meta_robots">
+                            <option value="index, follow" <?= ($page['meta_robots'] ?? '') === 'index, follow' ? 'selected' : '' ?>>index, follow</option>
+                            <option value="noindex, follow" <?= ($page['meta_robots'] ?? '') === 'noindex, follow' ? 'selected' : '' ?>>noindex, follow</option>
+                            <option value="index, nofollow" <?= ($page['meta_robots'] ?? '') === 'index, nofollow' ? 'selected' : '' ?>>index, nofollow</option>
+                            <option value="noindex, nofollow" <?= ($page['meta_robots'] ?? '') === 'noindex, nofollow' ? 'selected' : '' ?>>noindex, nofollow</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</form>
+<?php $__template->endSection('content'); ?>

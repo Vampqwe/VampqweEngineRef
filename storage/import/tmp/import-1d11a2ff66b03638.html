@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Паллиативный уход при онкологии у собак | 103vet.by</title>
+    <meta name="description" content="Паллиативная помощь собакам с онкологией: обезболивание, контроль симптомов, поддержка качества жизни. Экспертные рекомендации специалистов 103vet.by.">
+    <meta name="keywords" content="паллиативный уход собака онкология, хоспис для животных, обезболивание при раке у собак, качество жизни терминальная стадия">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Playfair+Display:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+
+    <style>
+        /* ОРИГИНАЛЬНЫЙ CSS из styles (1).css */
+        :root {
+            --bg-primary: #F7F5F0;
+            --bg-secondary: #EFECE6;
+            --bg-card: #FFFFFF;
+            --sage: #7A8B80;
+            --sage-dark: #5F6E64;
+            --sage-light: #95A899;
+            --ochre: #A68A64;
+            --ochre-light: #C4A882;
+            --text-primary: #3D3D3D;
+            --text-secondary: #6B6B6B;
+            --text-muted: #9A9A9A;
+            --border: rgba(122, 139, 128, 0.15);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+            font-weight: 400;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 9999; opacity: 0.025;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+        .container { max-width: 1280px; margin: 0 auto; padding: 0 2rem; }
+
+        /* NAVIGATION */
+        .nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            padding: 1.2rem 2rem;
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(247, 245, 240, 0.92); backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+        .nav-logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.3rem; color: var(--sage-dark);
+            text-decoration: none; font-weight: 500; flex-shrink: 0;
+        }
+        .nav-menu { display: flex; gap: 2.2rem; list-style: none; align-items: center; }
+        .nav-menu > li { position: relative; }
+        .nav-menu > li.has-dropdown { position: relative; }
+        .nav-menu > li > a {
+            color: var(--text-primary); text-decoration: none;
+            font-size: 0.9rem; font-weight: 400; transition: color 0.3s;
+            display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.5rem 0;
+        }
+        .nav-menu > li > a:hover { color: var(--sage); }
+        .nav-arrow { font-size: 0.7rem; transition: transform 0.3s; color: var(--text-muted); }
+        .nav-menu > li.has-dropdown:hover .nav-arrow,
+        .nav-menu > li.has-dropdown.open .nav-arrow { transform: rotate(180deg); color: var(--sage); }
+        .nav-dropdown {
+            position: absolute; top: calc(100% + 0.75rem); left: 0;
+            transform: translateY(10px); min-width: 280px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; padding: 1.25rem 1.5rem;
+            box-shadow: 0 12px 32px rgba(122, 139, 128, 0.15);
+            opacity: 0; visibility: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+        .nav-dropdown::before {
+            content: ''; position: absolute; top: -8px; left: 20px;
+            transform: rotate(45deg); width: 14px; height: 14px;
+            background: var(--bg-card);
+            border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+        }
+        .nav-dropdown-bridge { position: absolute; top: 100%; left: 0; right: 0; height: 20px; }
+        .nav-menu > li.has-dropdown:hover .nav-dropdown,
+        .nav-menu > li.has-dropdown.open .nav-dropdown {
+            opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+        }
+        @media (min-width: 969px) {
+            .nav-dropdown { left: 50%; transform: translateX(-50%) translateY(10px); }
+            .nav-dropdown::before { left: 50%; transform: translateX(-50%) rotate(45deg); }
+            .nav-menu > li.has-dropdown:hover .nav-dropdown,
+            .nav-menu > li.has-dropdown.open .nav-dropdown { transform: translateX(-50%) translateY(0); }
+        }
+        .dropdown-group { margin-bottom: 1rem; }
+        .dropdown-group:last-child { margin-bottom: 0; }
+        .dropdown-title {
+            font-family: 'Playfair Display', serif; font-size: 0.8rem; font-style: italic;
+            color: var(--ochre); letter-spacing: 0.08em; text-transform: lowercase;
+            margin-bottom: 0.5rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+        }
+        .dropdown-list { list-style: none; }
+        .dropdown-list li a {
+            display: block; padding: 0.4rem 0.6rem; color: var(--text-secondary);
+            text-decoration: none; font-size: 0.88rem; border-radius: 8px; transition: all 0.25s;
+        }
+        .dropdown-list li a:hover { background: var(--bg-secondary); color: var(--sage-dark); padding-left: 0.9rem; }
+        .nav-burger {
+            display: none; width: 42px; height: 42px; background: transparent;
+            border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
+            position: relative; flex-shrink: 0; transition: border-color 0.3s, background 0.3s;
+        }
+        .nav-burger:hover { border-color: var(--sage); background: var(--bg-secondary); }
+        .nav-burger span {
+            position: absolute; left: 50%; width: 20px; height: 2px;
+            background: var(--sage-dark); border-radius: 2px;
+            transform: translateX(-50%); transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .nav-burger span:nth-child(1) { top: 13px; }
+        .nav-burger span:nth-child(2) { top: 20px; }
+        .nav-burger span:nth-child(3) { top: 27px; }
+        .nav-burger.active span:nth-child(1) { top: 20px; transform: translateX(-50%) rotate(45deg); }
+        .nav-burger.active span:nth-child(2) { opacity: 0; }
+        .nav-burger.active span:nth-child(3) { top: 20px; transform: translateX(-50%) rotate(-45deg); }
+        .mobile-menu {
+            position: fixed; top: 0; right: 0; width: min(360px, 85vw); height: 100vh;
+            background: var(--bg-card); box-shadow: -8px 0 32px rgba(0,0,0,0.08);
+            z-index: 200; transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto; padding: 5.5rem 2rem 2rem;
+        }
+        .mobile-menu.active { transform: translateX(0); }
+        .mobile-menu-overlay {
+            position: fixed; inset: 0; background: rgba(61, 61, 61, 0.4);
+            backdrop-filter: blur(4px); z-index: 150;
+            opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s;
+        }
+        .mobile-menu-overlay.active { opacity: 1; visibility: visible; }
+        .mobile-menu-list { list-style: none; }
+        .mobile-menu-list > li { border-bottom: 1px solid var(--border); }
+        .mobile-menu-list > li > a,
+        .mobile-menu-list > li > .mobile-parent {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 1.1rem 0.25rem; color: var(--text-primary); text-decoration: none;
+            font-family: 'Playfair Display', serif; font-size: 1.15rem; font-weight: 400;
+            cursor: pointer; background: none; border: none; width: 100%; text-align: left;
+        }
+        .mobile-submenu {
+            max-height: 0; overflow: hidden; transition: max-height 0.4s ease;
+            background: var(--bg-secondary); border-radius: 12px; margin-bottom: 0.5rem;
+        }
+        .mobile-menu-list > li.open .mobile-submenu { max-height: 600px; }
+        .mobile-submenu-inner { padding: 0.5rem 1rem 1rem; }
+        .mobile-submenu .dropdown-group { margin-bottom: 1rem; }
+        .mobile-submenu .dropdown-title {
+            font-family: 'Playfair Display', serif; font-style: italic;
+            color: var(--ochre); font-size: 0.85rem; margin-bottom: 0.4rem;
+        }
+        .mobile-submenu .dropdown-list li a {
+            display: block; padding: 0.5rem 0.6rem; color: var(--text-secondary);
+            text-decoration: none; font-size: 0.95rem; border-radius: 8px;
+        }
+        .mobile-submenu .dropdown-list li a:hover { background: var(--bg-card); color: var(--sage-dark); }
+        .mobile-parent-arrow { font-size: 0.9rem; color: var(--text-muted); transition: transform 0.3s; }
+        .mobile-menu-list > li.open .mobile-parent-arrow { transform: rotate(180deg); color: var(--sage); }
+
+        /* HERO BANNER */
+        .hero-banner {
+            width: 100%; display: flex; justify-content: center; align-items: center;
+            padding: 0 2rem; margin-top: 80px; margin-bottom: 2rem;
+        }
+        .hero-banner-inner { max-width: 700px; width: 100%; display: flex; justify-content: center; }
+        .hero-banner-img { max-width: 100%; width: 100%; height: auto; display: block; border-radius: 24px; }
+
+        /* SECTIONS */
+        .section { padding: 8rem 0; }
+        .section-header { text-align: center; max-width: 700px; margin: 0 auto 4rem; }
+        .section-label {
+            font-size: 0.75rem; letter-spacing: 0.2em; text-transform: uppercase;
+            color: var(--text-muted); margin-bottom: 1.5rem;
+            display: flex; align-items: center; justify-content: center; gap: 1rem;
+        }
+        .section-label::before, .section-label::after { content: ''; width: 30px; height: 1px; background: var(--sage); }
+        .section-number { font-family: 'Playfair Display', serif; font-size: 0.9rem; color: var(--sage); font-style: italic; }
+        .section-header h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2rem, 4vw, 3rem); font-weight: 400; line-height: 1.1;
+            color: var(--sage-dark); margin-bottom: 1.5rem;
+        }
+        .section-header p { font-size: 1.1rem; line-height: 1.7; color: var(--text-secondary); font-weight: 300; }
+
+        /* PHILOSOPHY */
+        .philosophy { background: var(--bg-secondary); }
+        .philosophy-content { max-width: 800px; margin: 0 auto; text-align: center; }
+        .philosophy-text { font-size: 1.15rem; line-height: 1.9; color: var(--text-primary); margin-bottom: 1.5rem; font-weight: 300; }
+        .philosophy-note {
+            font-style: italic; color: var(--text-secondary); font-size: 1rem; line-height: 1.7;
+            padding: 2rem 2.5rem; background: var(--bg-card);
+            border-left: 3px solid var(--ochre); border-radius: 0 16px 16px 0;
+            text-align: left; margin-top: 2.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+        .philosophy-note strong { color: var(--sage-dark); font-weight: 500; font-style: normal; }
+
+        /* DIRECTIONS GRID */
+        .directions-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2rem;
+        }
+        .direction-card {
+            background: var(--bg-card); padding: 3rem 2.5rem; border-radius: 24px;
+            text-decoration: none; color: var(--text-primary);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04), inset 0 2px 4px rgba(255,255,255,0.9);
+            display: flex; flex-direction: column; border: 1px solid var(--border);
+            position: relative; min-height: 320px;
+        }
+        .direction-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, var(--sage-light), var(--ochre));
+            opacity: 0; transition: opacity 0.4s;
+        }
+        .direction-card:hover { transform: translateY(-6px); box-shadow: 0 12px 32px rgba(122,139,128,0.15); }
+        .direction-card:hover::before { opacity: 1; }
+        .direction-number {
+            font-family: 'Playfair Display', serif;
+            font-size: 0.9rem; font-style: italic; color: var(--ochre); margin-bottom: 1.5rem;
+        }
+        .direction-card h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.6rem; font-weight: 400; color: var(--sage-dark);
+            margin-bottom: 1rem; line-height: 1.2;
+        }
+        .direction-card p {
+            font-size: 1rem; line-height: 1.7; color: var(--text-secondary);
+            font-weight: 300; margin-bottom: 2rem; flex-grow: 1;
+        }
+        .direction-link {
+            font-size: 0.85rem; color: var(--sage); letter-spacing: 0.1em;
+            text-transform: uppercase; font-weight: 500;
+            display: flex; align-items: center; gap: 0.5rem; margin-top: auto;
+        }
+        .direction-link::after { content: '→'; transition: transform 0.3s; }
+        .direction-card:hover .direction-link::after { transform: translateX(4px); }
+
+        /* PALLIATIVE */
+        .palliative { background: var(--bg-secondary); padding: 6rem 2rem; text-align: center; }
+        .palliative-content { max-width: 750px; margin: 0 auto; }
+        .palliative-badge {
+            display: inline-block; padding: 0.5rem 1.2rem; background: var(--ochre);
+            color: white; border-radius: 100px; font-size: 0.8rem; font-weight: 500;
+            letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 2rem;
+        }
+        .palliative h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2rem, 4vw, 3rem); font-weight: 400;
+            color: var(--sage-dark); margin-bottom: 1.5rem;
+        }
+        .palliative p {
+            font-size: 1.1rem; line-height: 1.8; color: var(--text-secondary);
+            margin-bottom: 2.5rem; font-weight: 300;
+        }
+
+        /* FAQ */
+        .faq-list { max-width: 800px; margin: 0 auto; }
+        .faq-item { border-bottom: 1px solid var(--border); }
+        .faq-question {
+            padding: 2rem 0; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            font-family: 'Playfair Display', serif;
+            font-size: 1.25rem; font-weight: 400; color: var(--sage-dark); transition: color 0.3s;
+        }
+        .faq-question:hover { color: var(--ochre); }
+        .faq-icon { font-size: 1.5rem; color: var(--sage); transition: transform 0.4s; font-weight: 300; }
+        .faq-item.active .faq-icon { transform: rotate(45deg); }
+        .faq-answer {
+            max-height: 0; overflow: hidden; transition: max-height 0.5s ease, padding 0.5s ease;
+        }
+        .faq-item.active .faq-answer { max-height: 400px; padding-bottom: 2rem; }
+        .faq-answer p { font-size: 1.05rem; line-height: 1.8; color: var(--text-secondary); font-weight: 300; }
+
+        /* BUTTONS */
+        .hero-cta { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 0.75rem;
+            padding: 1.1rem 2.2rem; font-size: 0.95rem; font-weight: 500;
+            text-decoration: none; border-radius: 100px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; border: none;
+        }
+        .btn-primary { background: var(--sage); color: white; box-shadow: 0 4px 20px rgba(122, 139, 128, 0.25); }
+        .btn-primary:hover { background: var(--sage-dark); transform: translateY(-2px); }
+        .btn-ghost { background: transparent; color: var(--sage-dark); border: 1px solid var(--border); }
+        .btn-ghost:hover { background: var(--bg-secondary); border-color: var(--sage); }
+
+        /* FOOTER */
+        footer { background: var(--sage-dark); color: rgba(255,255,255,0.7); padding: 4rem 2rem 2rem; border-top: 1px solid rgba(255,255,255,0.1); }
+        .footer-content { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 3rem; margin-bottom: 3rem; }
+        .footer-brand h3 { font-family: 'Playfair Display', serif; font-size: 1.5rem; color: white; margin-bottom: 1rem; font-weight: 500; }
+        .footer-brand p { font-size: 0.95rem; line-height: 1.7; opacity: 0.7; }
+        .footer-section h4 { font-size: 0.8rem; letter-spacing: 0.15em; text-transform: uppercase; color: white; margin-bottom: 1.5rem; font-weight: 500; }
+        .footer-section ul { list-style: none; }
+        .footer-section li { margin-bottom: 0.8rem; }
+        .footer-section a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.95rem; transition: color 0.3s; }
+        .footer-section a:hover { color: var(--ochre-light); }
+        .footer-bottom { max-width: 1280px; margin: 0 auto; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; font-size: 0.85rem; opacity: 0.6; }
+
+        /* RESPONSIVE */
+        @media (max-width: 968px) {
+            .nav-menu { display: none; }
+            .nav-burger { display: block; }
+            .footer-content { grid-template-columns: 1fr 1fr; }
+            .hero-banner { padding: 0 1.5rem; margin-top: 70px; }
+            .hero-banner-inner { max-width: 550px; }
+        }
+        @media (max-width: 640px) {
+            .footer-content { grid-template-columns: 1fr; }
+            .footer-bottom { flex-direction: column; gap: 1rem; text-align: center; }
+            .hero-banner { padding: 0 1.25rem; margin-top: 65px; margin-bottom: 1.5rem; }
+            .hero-banner-inner { max-width: 100%; }
+            .section { padding: 5rem 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- НАВИГАЦИЯ -->
+    <nav class="nav">
+        <a href="/" class="nav-logo">103vet.by</a>
+        <ul class="nav-menu">
+            <li class="has-dropdown">
+                <a href="/sobaki/">Поддержка собак <span class="nav-arrow">▼</span></a>
+                <div class="nav-dropdown-bridge"></div>
+                <div class="nav-dropdown">
+                    <div class="dropdown-group">
+                        <div class="dropdown-title">онкология и боль</div>
+                        <ul class="dropdown-list">
+                            <li><a href="/palliativnyj-uhod-pri-onkologii/">Паллиативный уход при онкологии</a></li>
+                            <li><a href="/oblegchenie-boli-pri-sustavnoj-boli/">Облегчение боли при суставной боли</a></li>
+                            <li><a href="/kontrol-boli/">Контроль боли в домашних условиях</a></li>
+                        </ul>
+                    </div>
+                    <div class="dropdown-group">
+                        <div class="dropdown-title">уход и комфорт</div>
+                        <ul class="dropdown-list">
+                            <li><a href="/sozdanie-prostranstva/">Пространство для лежачей собаки</a></li>
+                            <li><a href="/uhod-za-sherstyu/">Уход за шерстью</a></li>
+                            <li><a href="/kormlenie/">Кормление тяжелобольной собаки</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </li>
+            <li><a href="/koshki/">Поддержка кошек</a></li>
+            <li><a href="/kachestvo-zhizni/">Качество жизни</a></li>
+            <li><a href="/pomoshch-vladeltsu/">Помощь владельцу</a></li>
+        </ul>
+        <button class="nav-burger" id="navBurger">
+            <span></span><span></span><span></span>
+        </button>
+    </nav>
+
+    <!-- МОБИЛЬНОЕ МЕНЮ -->
+    <div class="mobile-menu-overlay" id="mobileOverlay"></div>
+    <div class="mobile-menu" id="mobileMenu">
+        <ul class="mobile-menu-list">
+            <li>
+                <button class="mobile-parent">Поддержка собак <span class="mobile-parent-arrow">▼</span></button>
+                <div class="mobile-submenu">
+                    <div class="mobile-submenu-inner">
+                        <div class="dropdown-group">
+                            <div class="dropdown-title">онкология и боль</div>
+                            <ul class="dropdown-list">
+                                <li><a href="/palliativnyj-uhod-pri-onkologii/">Паллиативный уход при онкологии</a></li>
+                                <li><a href="/oblegchenie-boli-pri-sustavnoj-boli/">Облегчение боли при суставной боли</a></li>
+                                <li><a href="/kontrol-boli/">Контроль боли в домашних условиях</a></li>
+                            </ul>
+                        </div>
+                        <div class="dropdown-group">
+                            <div class="dropdown-title">уход и комфорт</div>
+                            <ul class="dropdown-list">
+                                <li><a href="/sozdanie-prostranstva/">Пространство для лежачей собаки</a></li>
+                                <li><a href="/uhod-za-sherstyu/">Уход за шерстью</a></li>
+                                <li><a href="/kormlenie/">Кормление тяжелобольной собаки</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </li>
+            <li><a href="/koshki/">Поддержка кошек</a></li>
+            <li><a href="/kachestvo-zhizni/">Качество жизни</a></li>
+            <li><a href="/pomoshch-vladeltsu/">Помощь владельцу</a></li>
+        </ul>
+    </div>
+
+    <!-- HERO BANNER -->
+    <div class="hero-banner">
+        <div class="hero-banner-inner">
+            <div style="width: 100%; height: 300px; background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card)); border-radius: 24px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: 'Playfair Display', serif; font-size: 1.5rem;">
+                Фото: Собака рядом с заботливым хозяином
+            </div>
+        </div>
+    </div>
+
+    <!-- СЕКЦИЯ 01 -->
+    <section class="section">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">
+                    <span class="section-number">01</span> Понимание ситуации
+                </div>
+                <h2>Паллиативный уход при онкологии у собак</h2>
+                <p>Когда диагноз «онкология» звучит как приговор, важно помнить: даже на терминальной стадии новообразований можно обеспечить питомцу достойное качество жизни. Паллиативная помощь — это не отказ от борьбы, а смена фокуса с лечения болезни на комфорт животного.</p>
+            </div>
+
+            <div class="philosophy-note">
+                <strong>Философия 103vet.by:</strong> Мы верим, что любовь не заканчивается, она меняет форму. Каждый день, прожитый без боли и страха, имеет значение — и для вашего друга, и для вашей семьи.
+            </div>
+        </div>
+    </section>
+
+    <!-- СЕКЦИЯ 02 -->
+    <section class="section philosophy">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">
+                    <span class="section-number">02</span> Когда нужна паллиативная помощь
+                </div>
+                <h2>Признаки, что питомцу требуется хосписный уход</h2>
+                <p>Решение о переходе к паллиативной поддержке принимается совместно с ветеринарным врачом. Вот ключевые сигналы, которые указывают на необходимость смены подхода:</p>
+            </div>
+
+            <div class="directions-grid">
+                <div class="direction-card">
+                    <div class="direction-number">01</div>
+                    <h3>Неконтролируемая боль</h3>
+                    <p>Стандартные анальгетики перестают действовать, собака не может найти удобное положение, скулит или дрожит даже в покое.</p>
+                </div>
+                <div class="direction-card">
+                    <div class="direction-number">02</div>
+                    <h3>Отказ от еды и воды</h3>
+                    <p>Питомец теряет интерес к любимым лакомствам, не пьет самостоятельно, стремительно теряет вес и мышечную массу.</p>
+                </div>
+                <div class="direction-card">
+                    <div class="direction-number">03</div>
+                    <h3>Ограничение подвижности</h3>
+                    <p>Собака не может встать, дойти до миски или выйти на улицу. Опухоль препятствует естественным функциям организма.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- СЕКЦИЯ 03 -->
+    <section class="section">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">
+                    <span class="section-number">03</span> Направления поддержки
+                </div>
+                <h2>Комплексный подход к паллиативной помощи</h2>
+                <p>Обезболивание при раке у собак — лишь одна из задач. Полноценный хосписный уход включает несколько взаимосвязанных направлений:</p>
+            </div>
+
+            <div class="directions-grid">
+                <a href="/kontrol-boli/" class="direction-card">
+                    <div class="direction-number">01</div>
+                    <h3>Контроль болевого синдрома</h3>
+                    <p>Индивидуальный подбор анальгетиков, включая опиоидные препараты при сильной боли от опухолей. Регулярная оценка эффективности по шкале боли.</p>
+                    <span class="direction-link">Подробнее о контроле боли</span>
+                </a>
+                <a href="/kachestvo-zhizni/" class="direction-card">
+                    <div class="direction-number">02</div>
+                    <h3>Оценка качества жизни</h3>
+                    <p>Использование шкалы HHHHHMM для объективного мониторинга состояния. Дневник наблюдений помогает принимать взвешенные решения.</p>
+                    <span class="direction-link">Шкала HHHHHMM</span>
+                </a>
+                <a href="/kormlenie/" class="direction-card">
+                    <div class="direction-number">03</div>
+                    <h3>Нутритивная поддержка</h3>
+                    <p>Специализированные диеты для онкологических пациентов, зондовое кормление при отказе от еды, контроль веса и гидратации.</p>
+                    <span class="direction-link">Кормление тяжелобольной собаки</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- СЕКЦИЯ 04 -->
+    <section class="section philosophy">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">
+                    <span class="section-number">04</span> Экспертный нюанс 103vet.by
+                </div>
+            </div>
+            <div class="philosophy-content">
+                <p class="philosophy-text">Гистологическое исследование опухоли помогает определить её тип и агрессивность, но на терминальной стадии приоритет смещается с диагностики на комфорт. Специалисты 103vet.by рекомендуют фокусироваться на том, что действительно важно: отсутствии боли, возможности есть и пить, контакте с семьёй.</p>
+                <div class="philosophy-note">
+                    <strong>Важно:</strong> Паллиативный уход не означает отказ от наблюдения. Регулярные осмотры на дому позволяют корректировать схему обезболивания и предотвращать осложнения, не подвергая собаку стрессу поездки в клинику.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">
+                    <span class="section-number">05</span> Частые вопросы
+                </div>
+                <h2>Ответы на важные вопросы</h2>
+            </div>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <div class="faq-question">Сколько времени может длиться паллиативный уход? <span class="faq-icon">+</span></div>
+                    <div class="faq-answer"><p>Продолжительность зависит от типа опухоли, её локализации и общего состояния собаки. У некоторых питомцев качественная жизнь сохраняется месяцами при правильно подобранной поддержке. Мы не торопим с решениями и уважаем ритм каждой семьи.</p></div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">Можно ли обезболивать собаку человеческими препаратами? <span class="faq-icon">+</span></div>
+                    <div class="faq-answer"><p>Категорически нет. Многие человеческие анальгетики (ибупрофен, парацетамол) токсичны для собак и могут вызвать необратимое повреждение печени или почек. Только ветеринарный врач может назначить безопасную схему обезболивания.</p></div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">Как понять, что качество жизни ухудшилось? <span class="faq-icon">+</span></div>
+                    <div class="faq-answer"><p>Используйте шкалу HHHHHMM: оценивайте Hurt (боль), Hunger (аппетит), Hydration (гидратация), Hygiene (гигиена), Happiness (счастье), Mobility (подвижность), More good days than bad (хороших дней больше, чем плохих). Если по большинству параметров оценка низкая — пора пересмотреть подход.</p></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <div class="palliative" id="palliative">
+        <div class="palliative-content">
+            <div class="palliative-badge">Бесплатно и конфиденциально</div>
+            <h2>Не уверены, что время пришло?</h2>
+            <p>Это самое тяжелое решение в жизни владельца. Мы понимаем ваши сомнения и готовы помочь. Проведем бесплатную телефонную консультацию, чтобы вместе оценить качество жизни вашего питомца и поддержать вас в этот непростой момент.</p>
+            <div class="hero-cta">
+                <a href="tel:+37529XXXXXXX" class="btn btn-primary">Получить консультацию</a>
+                <a href="/kachestvo-zhizni/test/" class="btn btn-ghost">Пройти тест качества жизни →</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h3>Достойный уход</h3>
+                <p>Проект является специализированным направлением ветеринарной клиники 103vet.by. Мы помогаем семьям пройти через самый трудный момент с достоинством и любовью.</p>
+            </div>
+            <div class="footer-section">
+                <h4>Направления</h4>
+                <ul>
+                    <li><a href="/sobaki/">Поддержка собак</a></li>
+                    <li><a href="/koshki/">Поддержка кошек</a></li>
+                    <li><a href="/kachestvo-zhizni/">Качество жизни</a></li>
+                    <li><a href="/pomoshch-vladeltsu/">Помощь владельцу</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Информация</h4>
+                <ul>
+                    <li><a href="/kachestvo-zhizni/test/">Тест качества жизни</a></li>
+                    <li><a href="#palliative">Консультация</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Контакты</h4>
+                <ul>
+                    <li><a href="tel:+37529XXXXXXX">+375 (29) XXX-XX-XX</a></li>
+                    <li><a href="mailto:care@103vet.by">care@103vet.by</a></li>
+                    <li>Минск и область</li>
+                    <li>Круглосуточно</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <div>© 2026 Достойный уход (проект 103vet.by)</div>
+            <div>Лицензия на ветеринарную деятельность № XXXXX</div>
+        </div>
+    </footer>
+
+    <script>
+        // Мобильное меню
+        const burger = document.getElementById('navBurger');
+        const mobileMenu = document.getElementById('mobileMenu');
+        const mobileOverlay = document.getElementById('mobileOverlay');
+        
+        burger.addEventListener('click', () => {
+            burger.classList.toggle('active');
+            mobileMenu.classList.toggle('active');
+            mobileOverlay.classList.toggle('active');
+        });
+        
+        mobileOverlay.addEventListener('click', () => {
+            burger.classList.remove('active');
+            mobileMenu.classList.remove('active');
+            mobileOverlay.classList.remove('active');
+        });
+
+        // Мобильные подменю
+        document.querySelectorAll('.mobile-parent').forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.parentElement.classList.toggle('open');
+            });
+        });
+
+        // FAQ аккордеон
+        document.querySelectorAll('.faq-question').forEach(q => {
+            q.addEventListener('click', () => {
+                const item = q.parentElement;
+                const isActive = item.classList.contains('active');
+                document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('active'));
+                if (!isActive) item.classList.add('active');
+            });
+        });
+    </script>
+
+</body>
+</html>
