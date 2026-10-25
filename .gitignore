@@ -7,3 +7,5 @@ storage/backups/
 /.phpunit.cache/
 
 /.phpunit.cache/
+/work.bundle
+/logs/
