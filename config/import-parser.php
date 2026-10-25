@@ -118,14 +118,17 @@ return [
         // 'canonical' (type='meta' читает и link[rel]/href); запись в колонку
         // canonical выполняет PageImportWriter::buildPageRecord() с учётом
         // canonical_mode: 'source' — URL целиком из исходника, 'derived' —
-        // APP_BASE_URL+slug. Колонка NOT NULL, поэтому блок помечен required:
-        // при canonical_mode='derived' это страховка от пустого canonical,
-        // при отсутствии тега writer честно вернёт ошибку предпросмотра.
+        // APP_BASE_URL+slug. target.column=false — псевдо-колонка: значение
+        // не пишется в БД напрямую, writer берёт его по имени блока из
+        // $parsed['values']['canonical']. Колонка canonical NOT NULL, поэтому
+        // блок помечен required: при canonical_mode='derived' это страховка
+        // от пустого canonical; при отсутствии тега writer честно вернёт
+        // ошибку предпросмотра.
         'canonical' => [
             'type'   => 'meta',
             'expression' => 'canonical',
             'required' => true,
-            'target' => ['table' => 'pages'],
+            'target' => ['table' => 'pages', 'column' => false],
         ],
 
         // Meta keywords → pages.keywords (в layouts/main.html присутствует)

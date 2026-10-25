@@ -134,6 +134,11 @@ class HtmlParser extends AbstractParser
 
             $column = (string) ($target['column'] ?? '');
             if ($column === '') {
+                // Псевдо-колонка (column: false) или блок без колонки —
+                // значение доступно writer'у по имени блока в $values.
+                $column = ($target['column'] ?? null) === false ? (string) $name : '';
+            }
+            if ($column === '') {
                 continue; // блок только для предпросмотра (без записи)
             }
 
@@ -270,6 +275,7 @@ class HtmlParser extends AbstractParser
         $xpath = new DOMXPath($doc);
 
         $result = [];
+        $sourceParsed = null; // ленивый кэш parse() для source-блоков отчёта
         foreach ($this->blocks as $name => $block) {
             $type = (string) ($block['type'] ?? '');
             $text = '';
@@ -279,6 +285,15 @@ class HtmlParser extends AbstractParser
                     break;
                 case 'meta':
                     $text = $this->extractMetaByBlock($xpath, $block);
+                    break;
+                // source-блоки (slug_from_canonical и т.п.) не извлекаются
+                // напрямую: их значение вычисляется в конце parse() из
+                // других блоков — для отчёта считаем parse() один раз.
+                case '':
+                    if ((string) ($block['source'] ?? '') !== '') {
+                        $sourceParsed ??= $this->parse($html);
+                        $text = (string) ($sourceParsed['values'][(string) $name] ?? '');
+                    }
                     break;
                 case 'marker':
                 case 'xpath':
@@ -326,14 +341,23 @@ class HtmlParser extends AbstractParser
                     $error = "Блок «{$name}»: target должен быть массивом";
                 } else {
                     $mode = (string) ($target['mode'] ?? 'column');
+                    // Псевдо-колонка: значение блока не пишется напрямую в
+                    // колонку pages, а используется кодом записи (writer) по
+                    // имени блока — например canonical_mode='source' берёт
+                    // URL из блока 'canonical', а slug вырезается из его path.
+                    $isPseudo = ($target['column'] ?? null) === false;
                     if (!in_array($mode, ['column', 'json_array', 'rows'], true)) {
                         $error = "Блок «{$name}»: неизвестный target.mode «{$mode}»";
-                    } elseif (($mode === 'column' || $mode === 'json_array') && empty($target['column'])) {
-                        $error = "Блок «{$name}»: в target отсутствует 'column'";
                     } elseif ($mode === 'rows' && (empty($target['table']) || empty($target['fields']))) {
                         $error = "Блок «{$name}»: для rows-режима нужны target.table и target.fields";
+                    } elseif (($mode === 'column' || $mode === 'json_array') && !$isPseudo && empty($target['column'])) {
+                        $error = "Блок «{$name}»: в target отсутствует 'column'";
                     }
                     foreach (['table', 'column'] as $k) {
+                        // column === false — псевдо-колонка (см. выше), не проверяется
+                        if ($k === 'column' && ($target[$k] ?? null) === false) {
+                            continue;
+                        }
                         if (isset($target[$k]) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $target[$k]) !== 1) {
                             $error = "Блок «{$name}»: некорректное имя {$k} в target: «{$target[$k]}»";
                             break;

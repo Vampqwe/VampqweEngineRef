@@ -165,10 +165,29 @@ class PageImportWriter
         $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
         $mode = (string) ($rules['canonical_mode'] ?? 'derived');
         $sourceCanonical = trim((string) ($parsed['values']['canonical'] ?? ''));
+        if ($sourceCanonical === '') {
+            // Фолбэк: canonical-блок может быть описан с явной колонкой
+            // (например, target.column='canonical') или без псевдо-колонки.
+            $srcBlock = (array) ($rules['blocks']['canonical'] ?? []);
+            $srcColumn = (string) ($srcBlock['target']['column'] ?? '');
+            if ($srcColumn !== '' && $srcColumn !== '1') { // (string)false === ''
+                $sourceCanonical = trim((string) ($parsed['values'][$srcColumn] ?? ''));
+            }
+            if ($sourceCanonical === '') {
+                $blockRes = (array) ($parsed['blocks']['canonical']['value'] ?? '');
+                $sourceCanonical = trim((string) $blockRes);
+            }
+        }
         if ($mode === 'source' && $sourceCanonical !== '') {
             $canonical = $sourceCanonical;
-            if ($slug === '') {
-                $slug = HtmlParser::slugFromCanonicalUrl($sourceCanonical);
+            $slugFromCanonical = HtmlParser::slugFromCanonicalUrl($sourceCanonical);
+            // В режиме source slug ВСЕГДА берётся из path canonical-ссылки
+            // исходника — даже если парсер уже сгенерировал его из title
+            // (иначе режим молча деградирует к старому поведению).
+            if ($slugFromCanonical !== '') {
+                $slug = $slugFromCanonical;
+            } elseif ($slug === '') {
+                $slug = 'import-' . substr(md5($sourceCanonical), 0, 8);
             }
         } else {
             $canonical = $baseUrl . '/' . ltrim($slug, '/');
