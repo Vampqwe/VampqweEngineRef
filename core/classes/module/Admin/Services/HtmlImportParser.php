@@ -117,6 +117,29 @@ class HtmlImportParser extends HtmlParser
     }
 
     /**
+     * Правила импорта (секции config/import-parser.php), активные в парсере.
+     *
+     * @return array<string,mixed>
+     */
+    public function getRules(): array
+    {
+        return $this->rules;
+    }
+
+    /**
+     * Полная замена правил парсера с пересборкой профиля блоков.
+     * Используется потребителями (и тестами) для переопределения секции
+     * 'blocks'/'marker_aliases' без чтения config/import-parser.php.
+     *
+     * @param array<string,mixed> $rules
+     */
+    public function setRules(array $rules): void
+    {
+        $this->rules = $rules;
+        $this->rebuildActiveBlocks();
+    }
+
+    /**
      * Валидация загруженного файла перед импортом.
      *
      * @param array{name:string,type:string,tmp_name:string,error:int,size:int} $file
