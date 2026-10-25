@@ -160,6 +160,37 @@ final class ImportServiceTest extends TestCase
         self::assertSame(1, $report['skipped']);
     }
 
+    /**
+     * Регрессия бага импорта схем: HtmlParser::extractSchema() отдаёт rows-строки
+     * с ключом 'data', а конфиг import-parser.php описывает плейсхолдер '{json}'.
+     * Без фолбэка в NOT NULL колонку schema_org.data попадал NULL и схема не
+     * записывалась. Проверяем, что значение берётся из одноимённой колонки строки.
+     */
+    public function testWriteRowsFallsBackToSameNamedColumnWhenPlaceholderMissing(): void
+    {
+        $db = new FakeImportDb();
+        $db->schema['schema_org'] = ['schema_type' => true, 'data' => true, 'priority' => true, 'page_id' => true];
+
+        $service = $this->makeService($db);
+        $report = $service->writeRows(
+            'schema_org',
+            [
+                ['schema_type' => 'WebSite', 'data' => '{"a":1}', 'priority' => 10],
+            ],
+            ['schema_type' => '{schema_type}', 'data' => '{json}', 'priority' => 10],
+            ['page_id' => 9]
+        );
+
+        self::assertSame(1, $report['inserted']);
+        self::assertSame([], $report['errors']);
+
+        $insert = end($db->queries);
+        self::assertStringContainsString('INSERT INTO `schema_org`', (string) $insert['sql']);
+        self::assertSame('{"a":1}', $insert['params']['data']);
+        self::assertSame('WebSite', $insert['params']['schema_type']);
+        self::assertSame(9, $insert['params']['page_id']);
+    }
+
     public function testMaxRowsPerTableCap(): void
     {
         $db = new FakeImportDb();
