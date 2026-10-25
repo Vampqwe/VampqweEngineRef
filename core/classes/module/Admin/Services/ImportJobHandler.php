@@ -23,7 +23,6 @@ use Core\System\Application\Application;
 use Core\System\Config\Config;
 use Core\System\DataBase\DataBase;
 use Core\System\Queue\Queue;
-use Core\System\Security\HtmlSanitizer;
 
 /**
  * Фоновое выполнение импорта HTML (job «import.html»).
@@ -116,16 +115,42 @@ class ImportJobHandler
     }
 
     /**
-     * Разрешить парсер импорта: через DI-контейнер приложения, если оно
-     * инициализировано (веб-контекст), иначе — напрямую (CLI-воркер).
+     * Разрешить синглтон из DI-контейнера приложения, если оно
+     * инициализировано (веб-контекст), иначе — создать напрямую
+     * (CLI-воркер). Единый резолвер для всех сервисов импорта.
+     */
+    private static function resolveFromContainer(string $class, callable $factory)
+    {
+        try {
+            return Application::getInstance()->getContainer()->get($class);
+        } catch (\Throwable) {
+            return $factory();
+        }
+    }
+
+    /**
+     * Разрешить парсер импорта (DI или прямое создание в CLI).
      */
     private static function resolveParser(Config $config): HtmlImportParser
     {
-        try {
-            return Application::getInstance()->getContainer()->get(HtmlImportParser::class);
-        } catch (\Throwable) {
-            return new HtmlImportParser($config);
-        }
+        /** @var HtmlImportParser */
+        return self::resolveFromContainer(
+            HtmlImportParser::class,
+            static fn(): HtmlImportParser => new HtmlImportParser($config)
+        );
+    }
+
+    /**
+     * Разрешить сервис записи страниц (тот же DataBase, что уже создан
+     * для проверки slug — единое соединение на обработку job'а).
+     */
+    private static function resolvePageService(DataBase $db): PageService
+    {
+        /** @var PageService */
+        return self::resolveFromContainer(
+            PageService::class,
+            static fn(): PageService => new PageService($db)
+        );
     }
 
     /**
@@ -158,111 +183,31 @@ class ImportJobHandler
 
             $parsed = $parser->parse($html);
 
-            $pageService = new PageService($db);
+            $pageService = self::resolvePageService($db);
             if ($pageService->pageExistsBySlug((string) $parsed['slug'])) {
                 throw new \RuntimeException(
                     'Страница с slug «' . $parsed['slug'] . '» уже существует.'
                 );
             }
 
-            $baseUrl = rtrim((string) $this->config->get('APP_BASE_URL', ''), '/');
-            $canonical = $baseUrl . '/' . ltrim((string) $parsed['slug'], '/');
+            // Единая точка записи импорта (та же логика, что в
+            // ImportController::confirm() — сборка записи pages, колоночные
+            // блоки config/import-parser.php, rows-наборы schema_org и др.,
+            // запись neutral-style.css). Все SQL-шаги — в транзакции;
+            // ошибки блоков возвращаются в отчёте.
+            $writer = new PageImportWriter(
+                $parser,
+                $pageService,
+                $this->config,
+                self::resolveFromContainer(
+                    ImportService::class,
+                    static fn(): ImportService => new ImportService($db)
+                ),
+                $db
+            );
+            $report = $writer->write($parsed);
 
-            $pageCfg = require \Core\System\Security\PathResolver::resolveConfigFile('page-content.php');
-            $defaultScript = (string) ($pageCfg['default_script'] ?? '/assets/js/main.js');
-            $scripts = $parsed['scripts'] ?? [];
-            if ($defaultScript !== '' && !in_array($defaultScript, $scripts, true)) {
-                array_unshift($scripts, $defaultScript);
-            }
-
-            // Побитный импорт: если парсер вернул точный срез исходника
-            // (content_raw=true), сохраняем его байт-в-байт — без обёртки и санитизации.
-            // Точный срез из парсера: raw-режим или fallback (маркеры не найдены —
-            // нормализованный контент, тогда обычная обработка).
-            $mainMarker = (string) ($parsed['blocks']['main_content']['meta']['marker'] ?? '');
-            $rawSlice = $mainMarker === 'raw_slice';
-            $fallbackNorm = $mainMarker === '';
-
-            $record = [
-                'title' => $parsed['title'],
-                'description' => $parsed['description'],
-                'slug' => $parsed['slug'],
-                'content' => $rawSlice
-                    ? (string) ($parsed['blocks']['main_content']['value'] ?? $parsed['content'])
-                    : $this->sanitizeContent($fallbackNorm
-                        ? (string) $parsed['content']
-                        : (string) $parser->stripDocumentWrapper((string) $parsed['content'])),
-                'status' => 'draft',
-                'page_type' => 'article',
-                'meta_robots' => 'index, follow',
-                'canonical' => $canonical,
-                'og_title' => $parsed['title'],
-                'og_description' => $parsed['description'],
-                'scripts' => json_encode(array_values($scripts), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            ];
-
-            // Дополнительные колоночные блоки (config/import-parser.php) — та же
-            // логика, что в ImportController::confirm().
-            $selfFields = array_fill_keys(array_keys($record), true);
-            foreach ($parser->getActiveBlocks() as $blockName => $block) {
-                $target = (array) ($block['target'] ?? []);
-                if ((string) ($target['mode'] ?? 'column') !== 'column') {
-                    continue;
-                }
-                if ((string) ($target['table'] ?? 'pages') !== 'pages') {
-                    continue;
-                }
-                $column = (string) ($target['column'] ?? '');
-                if ($column === '' || isset($selfFields[$column])) {
-                    continue;
-                }
-                $value = $parsed['values'][$column] ?? null;
-                if ($value === null || $value === '') {
-                    continue;
-                }
-                if ($column === 'content') {
-                    $isRaw = ((string) ($parsed['blocks'][$blockName]['meta']['marker'] ?? '')) === 'raw_slice';
-                    $value = $isRaw
-                        ? (string) ($parsed['blocks'][$blockName]['value'] ?? $value)
-                        : $this->sanitizeContent((string) $parser->stripDocumentWrapper((string) $value));
-                } elseif (!is_string($value)) {
-                    $value = (string) $value;
-                }
-                $record[$column] = $value;
-            }
-
-            $id = $pageService->createPage($record);
-
-            // rows-блоки (schema_org, menu_items и др.)
-            $importService = new ImportService($db);
-            $targets = $parser->getBlockTargets();
-            foreach ((array) ($parsed['row_sets'] ?? []) as $table => $rows) {
-                if (!is_array($rows) || $rows === []) {
-                    continue;
-                }
-                $fields = null;
-                foreach ($targets as $target) {
-                    if (($target['mode'] ?? 'column') === 'rows'
-                        && (string) ($target['table'] ?? '') === (string) $table) {
-                        $fields = (array) ($target['fields'] ?? []);
-                        break;
-                    }
-                }
-                if ($fields === null || $fields === []) {
-                    continue; // блок не описан в конфиге — молча пропускаем (как flash-warning в вебе)
-                }
-                try {
-                    $importService->writeRows((string) $table, $rows, $fields, ['page_id' => $id]);
-                } catch (\Throwable) {
-                    // ошибка блока не должна отменять созданный импорт
-                }
-            }
-
-            if (!empty($parsed['styles'])) {
-                $parser->commitStyles($parsed['styles']);
-            }
-
-            $this->notify($userId, 'success', 'Страница импортирована! ID: ' . $id . ' (фоновая обработка)');
+            $this->notify($userId, 'success', 'Страница импортирована! ID: ' . $report['page_id'] . ' (фоновая обработка)');
         } catch (\Throwable $e) {
             $this->notify($userId, 'error', 'Импорт не выполнен: ' . $e->getMessage());
             throw $e; // Queue решит ретрай/failed
@@ -293,19 +238,6 @@ class ImportJobHandler
         }
 
         return $removed;
-    }
-
-    private function sanitizeContent(string $html): string
-    {
-        $cfg = require \Core\System\Security\PathResolver::resolveConfigFile('page-content.php');
-        $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
-        $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
-
-        if ($maxLen > 0) {
-            $html = mb_substr($html, 0, $maxLen);
-        }
-
-        return $mode === 'raw' ? $html : HtmlSanitizer::clean($html);
     }
 
     /**

@@ -33,10 +33,27 @@ return [
     'image_timeout_s' => 10,
 
     /**
+     * Режим canonical для импортируемых страниц:
+     *  - 'derived' (по умолчанию): canonical = APP_BASE_URL + slug;
+     *  - 'source': canonical берётся из <link rel="canonical"> исходника
+     *    целиком, а slug вырезается из path этого URL (блок 'slug' с
+     *    source='slug_from_canonical'). Если canonical в файле отсутствует —
+     *    автоматический возврат к 'derived'.
+     */
+    'canonical_mode' => 'source',
+
+    /**
      * Побитный режим импорта контента: true — pages.content сохраняется
      * ТОЧНЫМ срезом исходного HTML между маркерами main_content (включая
      * сами комментарии), без DOM-нормализации, скачивания картинок и сбора
      * стилей. Работает в связке с content_mode='raw' в config/page-content.php.
+     *
+     * ⚠️ ПРАВИЛО ДОВЕРЕННОГО ИМПОРТА — НЕ ТРОГАТЬ !!!
+     * В этом режиме на всей цепочке (парсер → writer → БД) из контента не
+     * вырезается НИЧЕГО: ни <style>, ни внешние ссылки, ни обёртки. В БД
+     * ложатся байты исходного файла один-в-один. Использовать только для
+     * доверенных источников HTML; при импорте чужих файлов выставьте
+     * 'content_raw' => false (тогда включится санитайзер).
      */
     'content_raw' => true,
 
@@ -89,10 +106,51 @@ return [
             'required' => true,
         ],
 
-        // Slug: генерируется из title (спец-источник), не парсится из HTML
+        // Slug: режим canonical_mode='source' — вырезается из path тега
+        // <link rel="canonical"> исходника; если canonical отсутствует —
+        // фолбэк на генерацию из title (slug_from_title).
         'slug' => [
-            'source' => 'slug_from_title',
+            'source' => 'slug_from_canonical',
             'target' => ['table' => 'pages', 'column' => 'slug'],
+        ],
+
+        // Canonical из <link rel="canonical" href="...">. Извлечение — блоком
+        // 'canonical' (type='meta' читает и link[rel]/href); запись в колонку
+        // canonical выполняет PageImportWriter::buildPageRecord() с учётом
+        // canonical_mode: 'source' — URL целиком из исходника, 'derived' —
+        // APP_BASE_URL+slug. Колонка NOT NULL, поэтому блок помечен required:
+        // при canonical_mode='derived' это страховка от пустого canonical,
+        // при отсутствии тега writer честно вернёт ошибку предпросмотра.
+        'canonical' => [
+            'type'   => 'meta',
+            'expression' => 'canonical',
+            'required' => true,
+            'target' => ['table' => 'pages'],
+        ],
+
+        // Meta keywords → pages.keywords (в layouts/main.html присутствует)
+        'keywords' => [
+            'type'   => 'meta',
+            'expression' => 'keywords',
+            'target' => ['table' => 'pages', 'column' => 'keywords'],
+            'transform' => 'trim',
+        ],
+
+        // Meta robots → pages.meta_robots (дефолт как в шаблоне: index, follow)
+        'robots' => [
+            'type'   => 'meta',
+            'expression' => 'robots',
+            'target' => ['table' => 'pages', 'column' => 'meta_robots'],
+            'default' => 'index, follow',
+        ],
+
+        // Open Graph: og:image → pages.og_image (поддерживает и
+        // meta[property], и <link rel="og:image">). og_title/og_description
+        // writer всегда берёт из title/description — отдельных блоков нет.
+        'og_image' => [
+            'type'   => 'meta',
+            'expression' => 'og:image',
+            'target' => ['table' => 'pages', 'column' => 'og_image'],
         ],
 
         // Meta description (og:description как fallback) → pages.description

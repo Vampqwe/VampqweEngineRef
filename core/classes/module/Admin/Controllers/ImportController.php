@@ -26,10 +26,12 @@ use Core\Module\Admin\Services\ImportJobHandler;
 use Core\Module\Admin\Services\ImportService;
 use Core\Module\Page\PageService;
 use Core\Module\Admin\Services\AdminService;
+use Core\Module\Admin\Services\PageImportWriter;
+use Core\System\Application\Application;
 use Core\System\Config\Config;
+use Core\System\DataBase\DataBase;
 use Core\System\Http\Request;
 use Core\System\Http\Response;
-use Core\System\Security\HtmlSanitizer;
 use Core\System\Security\SecurityManager;
 use Core\System\Session\SessionManager;
 use Core\System\Template\Template;
@@ -42,6 +44,7 @@ class ImportController
     private Template $template;
     private Config $config;
     private SessionManager $session;
+    private PageImportWriter $writer;
 
     /** Ключ предпросмотра импорта в сессии */
     private const PREVIEW_KEY = 'import_preview';
@@ -54,7 +57,7 @@ class ImportController
         Config $config,
         private SecurityManager $security,
         ?SessionManager $session = null,
-        private ?ImportService $importService = null
+        ?PageImportWriter $writer = null
     ) {
         $this->parser = $parser;
         $this->pageService = $pageService;
@@ -62,44 +65,33 @@ class ImportController
         $this->template = $template;
         $this->config = $config;
         $this->session = $session ?? new SessionManager($config);
+        // Единая точка записи импорта — тот же код, что использует воркер
+        // очереди (ImportJobHandler), поэтому поведение sync/async не расходится.
+        // В веб-контексте провайдер передаёт готовый синглтон из DI; при его
+        // отсутствии собираем writer напрямую (обратная совместимость).
+        $this->writer = $writer ?? new PageImportWriter(
+            $parser,
+            $pageService,
+            $config,
+            $this->resolveImportService()
+        );
     }
 
     /**
-     * Обработка импортированного контента перед сохранением.
-     * Режим берётся из config/page-content.php ('content_mode'), как и в
-     * PagesController: 'sanitize' — HtmlSanitizer::clean(), 'raw' — без изменений.
-     * Побитный импорт (config/import-parser.php 'content_raw' => true): срез
-     * исходника сохраняется байт-в-байт — без снятия обёртки и санитизации.
+     * ImportService для fallback-сборки writer: из DI-контейнера приложения,
+     * иначе — напрямую через новое соединение БД (только если контейнер не инициализирован).
      */
-    private function prepareImportedContent(string $html, bool $rawSlice = false): string
+    private function resolveImportService(): ?ImportService
     {
-        if ($rawSlice) {
-            $rulesFile = \Core\System\Security\PathResolver::resolveConfigFile('import-parser.php');
-            $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
-            if (($rules['content_raw'] ?? false) === true) {
-                return $html;
+        try {
+            return Application::getInstance()->getContainer()->get(ImportService::class);
+        } catch (\Throwable) {
+            try {
+                return new ImportService(new DataBase($this->config));
+            } catch (\Throwable) {
+                return null; // прежний резервный путь без ImportService
             }
         }
-
-        return $this->sanitizeImportedContent($this->parser->stripDocumentWrapper($html));
-    }
-
-    /**
-     * Обработка импортированного контента перед сохранением.
-     * Режим берётся из config/page-content.php ('content_mode'), как и в
-     * PagesController: 'sanitize' — HtmlSanitizer::clean(), 'raw' — без изменений.
-     */
-    private function sanitizeImportedContent(string $html): string
-    {
-        $cfg = require \Core\System\Security\PathResolver::resolveConfigFile('page-content.php');
-        $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
-        $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
-
-        if ($maxLen > 0) {
-            $html = mb_substr($html, 0, $maxLen);
-        }
-
-        return $mode === 'raw' ? $html : HtmlSanitizer::clean($html);
     }
 
     public function index(Request $request): Response
@@ -214,138 +206,34 @@ class ImportController
             return Response::redirect('/admin/import');
         }
 
-        $exists = $this->pageService->pageExistsBySlug($parsed['slug']);
-
-        if ($exists) {
+        if ($this->pageService->pageExistsBySlug((string) $parsed['slug'])) {
             $this->adminService->setFlash('error', 'Страница с slug "' . $parsed['slug'] . '" уже существует.');
             (new ImportJobHandler($this->config))->forgetStagedFile();
             $this->session->remove(self::PREVIEW_KEY);
             return Response::redirect('/admin/import');
         }
 
-        // canonical = APP_BASE_URL + slug из БД
-        $baseUrl = rtrim((string)$this->config->get('APP_BASE_URL', ''), '/');
-        $canonical = $baseUrl . '/' . ltrim($parsed['slug'], '/');
-
-        // JS-скрипты: дефолтный скрипт из config/page-content.php + извлечённые со страницы
-        $pageCfg = require \Core\System\Security\PathResolver::resolveConfigFile('page-content.php');
-        $defaultScript = (string) ($pageCfg['default_script'] ?? '/assets/js/main.js');
-        $scripts = $parsed['scripts'] ?? [];
-        if ($defaultScript !== '' && !in_array($defaultScript, $scripts, true)) {
-            array_unshift($scripts, $defaultScript);
+        // Запись импорта — единая точка PageImportWriter (тот же код, что в
+        // воркере ImportJobHandler): сборка записи pages, колоночные блоки
+        // config/import-parser.php, rows-наборы (schema_org и др.), стили.
+        try {
+            $report = $this->writer->write($parsed);
+        } catch (\Throwable $e) {
+            $this->adminService->setFlash('error', 'Импорт не выполнен: ' . $e->getMessage());
+            return Response::redirect('/admin/import');
         }
 
-        $data = [
-            'title' => $parsed['title'],
-            'description' => $parsed['description'],
-            'slug' => $parsed['slug'],
-            // Контент импорта прогоняется через тот же санитайзер, что и ручное
-            // сохранение страниц (config/page-content.php: content_mode) —
-            // импорт чужого HTML не должен приносить stored-XSS в БД.
-            'content' => $this->prepareImportedContent((string) ($parsed['blocks']['main_content']['value'] ?? $parsed['content']), (bool) (($parsed['blocks']['main_content']['meta']['marker'] ?? '') === 'raw_slice')),
-            'status' => 'draft',
-            'page_type' => 'article',
-            'meta_robots' => 'index, follow',
-            'canonical' => $canonical,
-            'og_title' => $parsed['title'],
-            'og_description' => $parsed['description'],
-            'scripts' => json_encode(array_values($scripts), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-        ];
-
-        // Конфигурируемые блоки из config/import-parser.php ('blocks'):
-        // колоночные target'ы таблицы pages — дополнительные поля записи
-        // (title/description/content/scripts и т.п.). Значения идут только
-        // через подготовленные запросы PageService; имена колонок
-        // предварительно валидированы парсером ([A-Za-z_][A-Za-z0-9_]*).
-        $selfFields = array_fill_keys(array_keys($data), true);
-        $extraColumns = [];
-        foreach ($this->parser->getActiveBlocks() as $name => $block) {
-            $target = (array) ($block['target'] ?? []);
-            $mode = (string) ($target['mode'] ?? 'column');
-            if ($mode === 'rows') {
-                continue; // строковые наборы пишут ImportService (ниже)
-            }
-            $table = (string) ($target['table'] ?? 'pages');
-            $column = (string) ($target['column'] ?? '');
-            // Разрешаем дополнительные колонки только целевой таблицы pages:
-            // createPage() принимает фиксированный набор полей этой таблицы.
-            if ($table !== 'pages' || $column === '' || isset($selfFields[$column])) {
-                continue;
-            }
-            $value = $parsed['values'][$column] ?? null;
-            if ($value === null || $value === '') {
-                continue;
-            }
-            if ($column === 'content') {
-                $isRawSlice = ((string) ($parsed['blocks'][$name]['meta']['marker'] ?? '')) === 'raw_slice';
-                $value = $this->prepareImportedContent((string) $value, $isRawSlice);
-            } elseif (!is_string($value)) {
-                $value = (string) $value;
-            }
-            $extraColumns[$column] = $value;
+        foreach ($report['warnings'] as $warning) {
+            $this->adminService->setFlash('warning', (string) $warning);
         }
-        if ($extraColumns !== []) {
-            $data = array_merge($data, $extraColumns);
-        }
-
-        $id = $this->pageService->createPage($data);
-
-        // Generic-запись блоков mode='rows' в произвольные таблицы
-        // (schema_org, menu_items и любые другие из config/import-parser.php).
-        // Schema.org сохраняется тем же путём: его rows-набор содержит
-        // те же schema_type/data/priority, что и прежний addSchemaForPage().
-        $rowReports = [];
-        if ($this->importService !== null) {
-            $targets = $this->parser->getBlockTargets();
-            foreach ((array) ($parsed['row_sets'] ?? []) as $table => $rows) {
-                if ($rows === [] || !is_array($rows)) {
-                    continue;
-                }
-                $fields = null;
-                foreach ($targets as $target) {
-                    if (($target['mode'] ?? 'column') === 'rows'
-                        && (string) ($target['table'] ?? '') === (string) $table) {
-                        $fields = (array) ($target['fields'] ?? []);
-                        break;
-                    }
-                }
-                if ($fields === null || $fields === []) {
-                    $this->adminService->setFlash(
-                        'warning',
-                        "Блоки для таблицы «{$table}» не описаны в конфиге — пропущено " . count($rows) . ' строк'
-                    );
-                    continue;
-                }
-
-                $context = ['page_id' => $id];
-                try {
-                    $report = $this->importService->writeRows((string) $table, $rows, $fields, $context);
-                } catch (\Throwable $e) {
-                    $report = ['inserted' => 0, 'skipped' => count($rows), 'errors' => [$e->getMessage()]];
-                }
-                $rowReports[(string) $table] = $report;
-
-                foreach ($report['errors'] as $err) {
-                    $this->adminService->setFlash('warning', (string) $err);
-                }
-            }
-        } elseif (!empty($parsed['schemas'])) {
-            // Резервный путь без ImportService — прежнее поведение
-            $this->pageService->addSchemaForPage($id, $parsed['schemas']);
-        }
-
-        // Стили из <style>-блоков пишутся в neutral-style.css только после подтверждения импорта
-        if (!empty($parsed['styles'])) {
-            if (!$this->parser->commitStyles($parsed['styles'])) {
-                $this->adminService->setFlash('warning', 'Не удалось записать стили в storage/neutral-style.css');
-            }
+        if (!$report['styles_ok']) {
+            $this->adminService->setFlash('warning', 'Не удалось записать стили в storage/neutral-style.css');
         }
 
         $this->session->remove(self::PREVIEW_KEY);
+        $this->adminService->setFlash('success', 'Страница импортирована! ID: ' . $report['page_id']);
 
-        $this->adminService->setFlash('success', 'Страница импортирована! ID: ' . $id);
-
-        return Response::redirect('/admin/pages/' . $id . '/edit');
+        return Response::redirect('/admin/pages/' . $report['page_id'] . '/edit');
     }
 
     /**
