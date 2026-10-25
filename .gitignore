@@ -7,3 +7,4 @@ storage/cache/templates/
 storage/.rate_limits/
 storage/queue/failed/
 storage/import/tmp/
+logs/
