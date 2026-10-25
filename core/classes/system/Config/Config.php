@@ -141,6 +141,13 @@ final class Config
                 }
             }
 
+            // Fallback для тестового/CI-окружения, где config.env отсутствует:
+            // если задан VCORE_TEST_CONFIG_ENV (путь к env-файлу), используем его.
+            $testEnv = getenv('VCORE_TEST_CONFIG_ENV');
+            if ($testEnv !== false && $testEnv !== '' && PathProbe::exists($testEnv)) {
+                return self::init($testEnv);
+            }
+
             throw new FileSystemException('Config не инициализирован. Вызовите Config::init()');
         }
 
