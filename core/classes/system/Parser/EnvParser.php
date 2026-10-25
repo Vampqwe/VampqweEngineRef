@@ -90,6 +90,10 @@ class EnvParser extends AbstractParser
      * Нормализует значение: снимает парные кавычки и неэкранированные хвостовые
      * комментарии. Совместимость со старыми config.env без кавычек сохранена.
      *
+     * Единая семантика .env для всего движка: Config, админский просмотрщик
+     * конфигов и любые сторонние потребители используют ЭТУ реализацию
+     * (public static), дублирующие версии в consuming-классах удалены.
+     *
      * Форматы:
      *   KEY=value            -> value
      *   KEY="value"          -> value
@@ -98,7 +102,7 @@ class EnvParser extends AbstractParser
      *   KEY=value # note     -> value
      *   KEY="say \"hi\""     -> say "hi" (распаковка \\ \" \n \r \t — только двойные кавычки)
      */
-    private function parseValue(string $raw): string
+    public static function parseValue(string $raw): string
     {
         if ($raw === '') {
             return '';
@@ -107,7 +111,7 @@ class EnvParser extends AbstractParser
         $first = $raw[0];
 
         if ($first === '"' || $first === "'") {
-            $closePos = $this->findClosingQuote($raw, 0, $first);
+            $closePos = self::findClosingQuote($raw, 0, $first);
 
             // Закрывающей кавычки нет — трактуём как «сырое» значение до EOL
             if ($closePos === null) {
@@ -187,7 +191,7 @@ class EnvParser extends AbstractParser
      * Находит позицию закрывающей кавычки $quote, начиная со следующего
      * символа после открывающей. Для двойных кавычек учитываются экранирования \".
      */
-    private function findClosingQuote(string $raw, int $openPos, string $quote): ?int
+    private static function findClosingQuote(string $raw, int $openPos, string $quote): ?int
     {
         $length = strlen($raw);
         $i = $openPos + 1;

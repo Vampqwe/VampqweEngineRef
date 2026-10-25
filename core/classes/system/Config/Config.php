@@ -24,6 +24,7 @@ namespace Core\System\Config;
 
 use Core\System\FileSystem\FileSystemException;
 use Core\System\FileSystem\PathProbe;
+use Core\System\Parser\EnvParser;
 use Core\System\Security\SecurityException;
 
 /**
@@ -76,6 +77,9 @@ final class Config
             }
         }
 
+        // Единая семантика .env: разбор значений делегирован модулю
+        // Core\System\Parser\EnvParser (ранее здесь существовала локальная
+        // копия parseValue с расходящейся обработкой кавычек — удалена).
         foreach ($lines as $line) {
             $line = trim($line);
 
@@ -91,111 +95,9 @@ final class Config
                     continue;
                 }
 
-                $this->values[$key] = self::parseValue(trim($value));
+                $this->values[$key] = EnvParser::parseValue(trim($value));
             }
         }
-    }
-
-    /**
-     * Нормализует значение: снимает парные кавычки и неэкранированные хвостовые комментарии.
-     *
-     * Поддерживаются форматы (совместимость со старыми config.env без кавычек сохранена):
-     *   KEY=value            -> value
-     *   KEY="value"          -> value
-     *   KEY='va\'lue'        -> va'lue   (одинарные кавычки — «сырое» значение, внутренний ' экранируется \)
-     *   KEY="value # note"   -> value # note (комментарий внутри кавычек игнорируется)
-     *   KEY=value # note     -> value
-     *   KEY="say \"hi\""     -> say "hi" (распаковка \\ \" \n \r \t только для двойных кавычек)
-     */
-    private static function parseValue(string $raw): string
-    {
-        if ($raw === '') {
-            return '';
-        }
-
-        $quote = $raw[0];
-
-        if (($quote === '"' || $quote === "'") && strlen($raw) >= 2) {
-            // Найти закрывающую кавычку того же типа, не экранированную \\ и
-            // (для одинарных) не удвоенную ''. Раньше сравнивался только
-            // последний символ строки — значение `"a b" # note` парсилось как
-            // `a b"` с хвостовой кавычкой.
-            $closePos = self::findClosingQuote($raw, $quote);
-
-            if ($closePos !== null) {
-                $inner = substr($raw, 1, $closePos - 1);
-
-                if ($quote === "'") {
-                    // Одинарные кавычки: «сырое» значение; '' -> ' (SQL-удвоение), \' -> '
-                    $inner = str_replace(["''", "\\'"], "'", $inner);
-                    return self::stripTrailingComment(substr($raw, $closePos + 1), $inner);
-                }
-
-                // Однопроходная распаковка: \\ \" \n \r \t (порядок важен — preg обрабатывает слева направо)
-                $inner = preg_replace_callback(
-                    '/\\\\(["nrt\\\\])/',
-                    static fn(array $m): string => match ($m[1]) {
-                        'n' => "\n",
-                        'r' => "\r",
-                        't' => "\t",
-                        default => $m[1], // " и \
-                    },
-                    $inner
-                );
-                return self::stripTrailingComment(substr($raw, $closePos + 1), $inner);
-            }
-
-            // Незакрывающаяся кавычка — трактуем как есть, только срезаем хвостовой комментарий
-            $raw = substr($raw, 1);
-        }
-
-        // Неэкранированный хвостовой комментарий: пробел + # ...
-        $cut = preg_match('/(?<!\\\\)\s+#.*$/', $raw, $m, PREG_OFFSET_CAPTURE);
-
-        if ($cut === 1) {
-            $raw = rtrim(substr($raw, 0, $m[0][1]));
-        }
-
-        return $raw;
-    }
-
-    /**
-     * Позиция закрывающей кавычки $quote (строка начинается с открывающей)
-     * или null, если пара отсутствует.
-     */
-    private static function findClosingQuote(string $s, string $quote): ?int
-    {
-        $len = strlen($s);
-        for ($i = 1; $i < $len; $i++) {
-            $ch = $s[$i];
-
-            if ($ch === '\\') {
-                // backslash-escape: следующий символ часть литерала
-                $i++;
-                continue;
-            }
-
-            if ($ch === $quote) {
-                if ($quote === "'" && $i + 1 < $len && $s[$i + 1] === "'") {
-                    // SQL-удвоение '' внутри '...' — остаёмся в строке
-                    $i++;
-                    continue;
-                }
-                return $i;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Обработать «хвост» после закрывающей кавычки. Хвостовой комментарий
-     * (`KEY="v" # note`) отбрасывается; прочий мусор после кавычки игнорируется,
-     * значение возвращается как есть.
-     */
-    private static function stripTrailingComment(string $tail, string $value): string
-    {
-        return $value;
     }
 
     public static function init(string $envPath): self

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
+use Core\System\Parser\EnvParser;
 use Core\System\Security\SecurityManager;
 
 class ConfigFileParser
@@ -267,23 +268,12 @@ class ConfigFileParser
 
     /**
      * Снимает обрамляющие кавычки ("..."/'...') со значения.
+     * Единая семантика .env: разбор делегирован Core\System\Parser\EnvParser
+     * (локальная упрощённая копия с расходящейся обработкой escape-последовательностей удалена).
      */
     private function unquoteValue(string $value): string
     {
-        if (strlen($value) >= 2) {
-            $first = $value[0];
-            $last = $value[strlen($value) - 1];
-            if (($first === '"' && $last === '"') || ($first === "'" && $last === "'")) {
-                $inner = substr($value, 1, -1);
-                if ($first === '"') {
-                    $inner = str_replace(['\\n', '\\t', '\\"', '\\\\'], ["\n", "\t", '"', '\\'], $inner);
-                } else {
-                    $inner = str_replace("\\'", "'", $inner);
-                }
-                return $inner;
-            }
-        }
-        return $value;
+        return EnvParser::parseValue($value);
     }
 
     /**
