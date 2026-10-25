@@ -173,14 +173,15 @@ class ImportService
             $data = [];
             foreach ($fields as $col => $pattern) {
                 $value = $this->resolveField((string) $col, $pattern, $row, $i);
-                // Фолбэк контракта: если шаблона «{колонка}» в строке нет,
-                // берём значение из одноимённой колонки строки парсера.
-                // Парсер (HtmlParser::extractSchema) отдаёт rows-строки с
-                // ключом 'data', а конфиг import-parser.php описывает
-                // плейсхолдер '{json}' — без фолбэка в NOT NULL колонку
-                // schema_org.data попадал NULL и схема не записывалась.
-                if ($value === null && !isset($row[$col])) {
-                    $value = $row[(string) $col] ?? null;
+                // Фолбэк контракта: если разрешённого значения нет (null или
+                // пустая строка), берём значение из одноимённой колонки
+                // строки парсера. Парсер (HtmlParser::extractSchema) отдаёт
+                // rows-строки с ключом 'data', а конфиг import-parser.php
+                // описывает плейсхолдер '{json}' — без фолбэка в NOT NULL
+                // колонку schema_org.data попадал NULL и схема не записывалась.
+                if (($value === null || $value === '') && isset($row[$col])
+                    && $row[$col] !== '' && $row[$col] !== null) {
+                    $value = $row[(string) $col];
                 }
                 $data[(string) $col] = $value;
             }
