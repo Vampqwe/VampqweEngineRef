@@ -196,7 +196,7 @@ class Template
         // Исключение: 'raw' — политика «контент хранится и выводится как есть»
         // (согласованно с записью: PagesController/ImportController при 'raw'
         // не санитизируют). Sanitize на выводе молча ломала побитный импорт.
-        $modeFile = dirname(__DIR__, 4) . '/config/page-content.php';
+        $modeFile = dirname(__DIR__, 5) . '/config/page-content.php';
         $mode = 'sanitize';
         if (is_file($modeFile)) {
             $modeCfg = (array) require $modeFile;

@@ -43,7 +43,7 @@ class HtmlSanitizer
     private static function config(): array
     {
         if (self::$config === null) {
-            $path = dirname(__DIR__, 4) . '/config/html-sanitizer.php';
+            $path = dirname(__DIR__, 5) . '/config/html-sanitizer.php';
             self::$config = is_file($path) ? require $path : [];
         }
         return self::$config;

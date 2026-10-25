@@ -150,7 +150,7 @@ class ImportJobHandler
             $baseUrl = rtrim((string) $this->config->get('APP_BASE_URL', ''), '/');
             $canonical = $baseUrl . '/' . ltrim((string) $parsed['slug'], '/');
 
-            $pageCfg = require dirname(__DIR__, 5) . '/config/page-content.php';
+            $pageCfg = require dirname(__DIR__, 6) . '/config/page-content.php';
             $defaultScript = (string) ($pageCfg['default_script'] ?? '/assets/js/main.js');
             $scripts = $parsed['scripts'] ?? [];
             if ($defaultScript !== '' && !in_array($defaultScript, $scripts, true)) {
@@ -279,7 +279,7 @@ class ImportJobHandler
 
     private function sanitizeContent(string $html): string
     {
-        $cfg = require dirname(__DIR__, 5) . '/config/page-content.php';
+        $cfg = require dirname(__DIR__, 6) . '/config/page-content.php';
         $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
         $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
 

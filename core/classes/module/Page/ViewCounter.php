@@ -234,7 +234,7 @@ class ViewCounter
             return $this->viewsCached = $this->viewsOverride;
         }
 
-        $path = dirname(__DIR__, 4) . '/config/page-content.php';
+        $path = dirname(__DIR__, 5) . '/config/page-content.php';
         $full = is_file($path) ? (array) require $path : [];
         return $this->viewsCached = (array) ($full['views'] ?? []);
     }

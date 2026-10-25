@@ -69,7 +69,7 @@ class PagesController
      */
     private function sanitizeContent(string $html): string
     {
-        $cfg = require dirname(__DIR__, 5) . '/config/page-content.php';
+        $cfg = require dirname(__DIR__, 6) . '/config/page-content.php';
         $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
         $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
 

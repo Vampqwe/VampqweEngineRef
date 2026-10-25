@@ -143,7 +143,7 @@ class PageService
     {
         static $cfg = null;
         if ($cfg === null) {
-            $path = dirname(__DIR__, 4) . '/config/page-content.php';
+            $path = dirname(__DIR__, 5) . '/config/page-content.php';
             $cfg = is_file($path) ? require $path : [];
         }
         return $cfg[$key] ?? null;

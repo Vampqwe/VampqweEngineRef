@@ -74,7 +74,7 @@ class ImportController
     private function prepareImportedContent(string $html, bool $rawSlice = false): string
     {
         if ($rawSlice) {
-            $rulesFile = dirname(__DIR__, 5) . '/config/import-parser.php';
+            $rulesFile = dirname(__DIR__, 6) . '/config/import-parser.php';
             $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
             if (($rules['content_raw'] ?? false) === true) {
                 return $html;
@@ -91,7 +91,7 @@ class ImportController
      */
     private function sanitizeImportedContent(string $html): string
     {
-        $cfg = require dirname(__DIR__, 5) . '/config/page-content.php';
+        $cfg = require dirname(__DIR__, 6) . '/config/page-content.php';
         $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
         $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
 
@@ -228,7 +228,7 @@ class ImportController
         $canonical = $baseUrl . '/' . ltrim($parsed['slug'], '/');
 
         // JS-скрипты: дефолтный скрипт из config/page-content.php + извлечённые со страницы
-        $pageCfg = require dirname(__DIR__, 5) . '/config/page-content.php';
+        $pageCfg = require dirname(__DIR__, 6) . '/config/page-content.php';
         $defaultScript = (string) ($pageCfg['default_script'] ?? '/assets/js/main.js');
         $scripts = $parsed['scripts'] ?? [];
         if ($defaultScript !== '' && !in_array($defaultScript, $scripts, true)) {
