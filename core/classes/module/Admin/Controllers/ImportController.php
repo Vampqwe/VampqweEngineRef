@@ -21,6 +21,7 @@ declare(strict_types=1);
 
 namespace Core\Module\Admin\Controllers;
 
+use Core\Module\Admin\Services\BatchImportService;
 use Core\Module\Admin\Services\HtmlImportParser;
 use Core\Module\Admin\Services\ImportJobHandler;
 use Core\Module\Admin\Services\ImportService;
@@ -45,9 +46,13 @@ class ImportController
     private Config $config;
     private SessionManager $session;
     private PageImportWriter $writer;
+    private BatchImportService $batch;
 
     /** Ключ предпросмотра импорта в сессии */
     private const PREVIEW_KEY = 'import_preview';
+
+    /** Ключ отчёта пакетного импорта в сессии (scan → confirm) */
+    private const BATCH_SCAN_KEY = 'import_batch_scan';
 
     public function __construct(
         HtmlImportParser $parser,
@@ -57,7 +62,8 @@ class ImportController
         Config $config,
         private SecurityManager $security,
         ?SessionManager $session = null,
-        ?PageImportWriter $writer = null
+        ?PageImportWriter $writer = null,
+        ?BatchImportService $batch = null
     ) {
         $this->parser = $parser;
         $this->pageService = $pageService;
@@ -75,6 +81,9 @@ class ImportController
             $config,
             $this->resolveImportService()
         );
+        // Пакетный импорт из папки storage: тот же parser/writer/PageService,
+        // поэтому правила записи полностью совпадают с одиночным импортом.
+        $this->batch = $batch ?? new BatchImportService($config, $parser, $pageService, $this->writer);
     }
 
     /**
@@ -256,5 +265,110 @@ class ImportController
         $user = $this->session->adminUser();
 
         return $handler->dispatch($file, (int) ($user['id'] ?? 0));
+    }
+
+    // ─── Пакетный импорт из папки storage ────────────────────────────────
+
+    /**
+     * GET /admin/import/batch — выбор папки и запуск сканирования.
+     */
+    public function batch(Request $request): Response
+    {
+        $folder = trim((string) $request->input('folder', ''));
+
+        $scan = null;
+        if ($folder !== '') {
+            $scan = $this->batch->scan($folder);
+            $this->session->set(self::BATCH_SCAN_KEY, $scan);
+        } else {
+            $this->session->remove(self::BATCH_SCAN_KEY);
+        }
+
+        $html = $this->template->render('admin/import/batch', [
+            'title' => 'Пакетный импорт страниц',
+            'flash' => $this->adminService->getFlash(),
+            'folders' => $this->batch->listFolders(),
+            'folder' => $folder,
+            'scan' => $scan,
+            'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
+        ]);
+
+        return Response::html($html);
+    }
+
+    /**
+     * POST /admin/import/batch-scan — «Просканировать»: короткий отчёт о
+     * том, какие страницы папки можно импортировать, а какие нет.
+     */
+    public function batchScan(Request $request): Response
+    {
+        if (!$request->isPost()) {
+            return Response::redirect('/admin/import/batch');
+        }
+
+        $folder = trim((string) $request->post('folder', ''));
+        if ($folder === '') {
+            $this->adminService->setFlash('error', 'Не выбрана папка в storage.');
+
+            return Response::redirect('/admin/import/batch');
+        }
+
+        $scan = $this->batch->scan($folder);
+        $this->session->set(self::BATCH_SCAN_KEY, $scan);
+
+        $html = $this->template->render('admin/import/batch', [
+            'title' => 'Пакетный импорт страниц',
+            'flash' => $this->adminService->getFlash(),
+            'folders' => $this->batch->listFolders(),
+            'folder' => $folder,
+            'scan' => $scan,
+            'csrf_token' => $this->security->getCsrfToken()->getToken(),
+            'csrf_meta'  => $this->security->getCsrfToken()->getMetaTag(),
+        ]);
+
+        return Response::html($html);
+    }
+
+    /**
+     * POST /admin/import/batch-confirm — «Жму ОК»: импорт всех годных
+     * файлов по уже реализованным правилам (PageImportWriter), успешно
+     * залитые страницы переносятся в {folder}/added.
+     */
+    public function batchConfirm(Request $request): Response
+    {
+        if (!$request->isPost()) {
+            return Response::redirect('/admin/import/batch');
+        }
+
+        $scan = $this->session->get(self::BATCH_SCAN_KEY);
+        $folder = trim((string) ((is_array($scan) ? ($scan['folder'] ?? '') : '')
+            ?: (string) $request->input('folder', '')));
+
+        if (!is_array($scan) || $folder === ''
+            || BatchImportService::isValidFolderName($folder) === false) {
+            $this->adminService->setFlash('error', 'Нет данных сканирования. Выполните сканирование заново.');
+
+            return Response::redirect('/admin/import/batch');
+        }
+
+        $result = $this->batch->run($folder);
+        $this->session->remove(self::BATCH_SCAN_KEY);
+
+        if ($result['imported'] > 0) {
+            $this->adminService->setFlash(
+                'success',
+                'Импортировано страниц: ' . $result['imported']
+                    . ($result['moved'] > 0 ? ', перенесено в ' . $folder . '/added: ' . $result['moved'] : '')
+            );
+        }
+        foreach (array_slice($result['errors'], 0, 10) as $error) {
+            $this->adminService->setFlash('error', (string) $error);
+        }
+        if ($result['imported'] === 0 && $result['failed'] === 0) {
+            $this->adminService->setFlash('warning', 'В папке «' . $folder . '» нет файлов, пригодных для импорта.');
+        }
+
+        return Response::redirect('/admin/import/batch?folder=' . rawurlencode($folder));
     }
 }

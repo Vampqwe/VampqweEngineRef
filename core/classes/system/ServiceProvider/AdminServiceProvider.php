@@ -43,6 +43,7 @@ use Core\Module\Admin\Controllers\ImportController;
 use Core\Module\Admin\Services\HtmlImportParser;
 use Core\Module\Admin\Services\ImportService;
 use Core\Module\Admin\Services\PageImportWriter;
+use Core\Module\Admin\Services\BatchImportService;
 use Core\Module\Admin\Services\ExportService;
 use Core\Module\Admin\Controllers\MenuController;
 use Core\Module\Admin\Services\MenuAdminService;
@@ -104,6 +105,16 @@ class AdminServiceProvider extends ServiceProvider
                 $config,
                 $this->container->get(ImportService::class),
                 $db
+            )
+        );
+
+        // Пакетный импорт из папки storage: тот же парсер/writer/PageService.
+        $this->container->singleton(BatchImportService::class, fn() =>
+            new BatchImportService(
+                $config,
+                $this->container->get(HtmlImportParser::class),
+                $this->container->get(PageService::class),
+                $this->container->get(PageImportWriter::class)
             )
         );
 
@@ -227,7 +238,8 @@ class AdminServiceProvider extends ServiceProvider
             $container->get(Config::class),
             $container->get(SecurityManager::class),
             null,
-            $container->get(PageImportWriter::class)
+            $container->get(PageImportWriter::class),
+            $container->get(BatchImportService::class)
         );
 
         $menuController = static fn(): MenuController => new MenuController(
@@ -363,6 +375,19 @@ class AdminServiceProvider extends ServiceProvider
         $admin->post('/import/confirm', function (Request $request) use ($importController): Response {
             return $importController()->confirm($request);
         })->name('admin.import.confirm');
+
+        // ─── Пакетный импорт из папки storage ───
+        $admin->get('/import/batch', function (Request $request) use ($importController): Response {
+            return $importController()->batch($request);
+        })->name('admin.import.batch');
+
+        $admin->post('/import/batch-scan', function (Request $request) use ($importController): Response {
+            return $importController()->batchScan($request);
+        })->name('admin.import.batch.scan');
+
+        $admin->post('/import/batch-confirm', function (Request $request) use ($importController): Response {
+            return $importController()->batchConfirm($request);
+        })->name('admin.import.batch.confirm');
 
         // ─── Редактор меню (drag-and-drop) ───
         // Важно: статический /menu/items регистрируется раньше, чем шаблонный
