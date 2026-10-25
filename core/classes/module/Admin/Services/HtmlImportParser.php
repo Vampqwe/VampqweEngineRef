@@ -47,7 +47,7 @@ class HtmlImportParser
         $this->config = $config;
 
         // Единая точка управления правилами парсинга — config/import-parser.php
-        $rulesFile = dirname(__DIR__, 4) . '/config/import-parser.php';
+        $rulesFile = dirname(__DIR__, 5) . '/config/import-parser.php';
         $this->rules = is_file($rulesFile) ? (array) require $rulesFile : [];
 
         // Получаем реальный путь к storage (с правильным регистром)

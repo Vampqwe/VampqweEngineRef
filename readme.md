@@ -256,7 +256,7 @@ Middleware  = implements Core\System\Http\Middleware (handle(Request, next): Res
 | Класс | Зависимости | Роль |
 |---|---|---|
 | `PageController` | `PageService`, `RedirectService`, `MenuService`, `Template`, `Config` | fallback-роут: ЧПУ-страница из `pages`, редиректы из `redirects`, рендер через `layouts/main.html`, 404 |
-| `PageService` | `DataBase` | чтение `pages`; инкремент просмотров через `ViewCounter` (настройка `core/config/page-content.php`) |
+| `PageService` | `DataBase` | чтение `pages`; инкремент просмотров через `ViewCounter` (настройка `config/page-content.php`) |
 | `MenuService` | `DataBase` | дерево `menu_items` для `partials/menu.html` |
 | `RedirectService` | `DataBase` | таблица `redirects` source→target |
 | `SitemapService` | `DataBase` | URL-лист из `pages`/`menu_items` |
