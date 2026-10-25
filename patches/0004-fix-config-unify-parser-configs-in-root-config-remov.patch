@@ -1,0 +1,594 @@
+From c473c3108711fb2010a07cc0d8567e94066c2b67 Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Sun, 25 Oct 2026 05:53:25 +0000
+Subject: [PATCH 4/6] fix(config): unify parser configs in root config/, remove
+ stale core/config
+
+- config/import-parser.php was a truncated copy missing content_raw/blocks/marker_aliases -> import silently fell back to legacy parsing; restored full working version (from core/config, which code actually needs)
+- config/page-content.php lost views.async + flush tuning keys -> ViewCounter reverted to sync mode by default; restored full version
+- removed core/config/ entirely: no PHP code references it anymore (all require paths point to /config/)
+- verified: bracket balance + required keys present in all 4 config files
+---
+ config/import-parser.php        | 139 +++++++++++++++++++++
+ config/page-content.php         |  29 ++++-
+ core/config/admin-dashboard.php |  25 ----
+ core/config/html-sanitizer.php  |  50 --------
+ core/config/import-parser.php   | 212 --------------------------------
+ core/config/page-content.php    |  62 ----------
+ 6 files changed, 164 insertions(+), 353 deletions(-)
+ delete mode 100644 core/config/admin-dashboard.php
+ delete mode 100644 core/config/html-sanitizer.php
+ delete mode 100644 core/config/import-parser.php
+ delete mode 100644 core/config/page-content.php
+
+diff --git a/config/import-parser.php b/config/import-parser.php
+index ea16169..49b402e 100644
+--- a/config/import-parser.php
++++ b/config/import-parser.php
+@@ -32,6 +32,145 @@ return [
+     // Таймаут HTTP-запроса при скачивании изображений, сек.
+     'image_timeout_s' => 10,
+ 
++    /**
++     * Побитный режим импорта контента: true — pages.content сохраняется
++     * ТОЧНЫМ срезом исходного HTML между маркерами main_content (включая
++     * сами комментарии), без DOM-нормализации, скачивания картинок и сбора
++     * стилей. Работает в связке с content_mode='raw' в config/page-content.php.
++     */
++    'content_raw' => true,
++
++    /**
++     * ═══════════════════════════════════════════════════════════════════
++     * БЛОКИ ИМПОРТА (гибкая конфигурация)
++     * ═══════════════════════════════════════════════════════════════════
++     *
++     * Каждый блок = «что вытянуть из HTML» + «куда положить в БД».
++     * Ключ массива — машинное имя блока (используется в отчёте предпросмотра).
++     *
++     * Поля описания блока:
++     *  - 'type'         : 'marker' | 'xpath' | 'meta' | 'schema' | 'script' | 'title'
++     *      marker — срез HTML между двумя комментариями-маркерами;
++     *      xpath  — узлы по XPath-выражению (собирается innerHTML найденного узла);
++     *      meta   — значение атрибута <meta name="..."> или property="...";
++     *      schema — JSON-LD (application/ld+json), как раньше;
++     *      script — пути <script src="...">;
++     *      title  — <title>, иначе первый <h1>.
++     *  - 'start'        : (marker) открывающий маркер. Строка — точное имя
++     *                     комментария (регистронезависимо), либо регулярка '~...~'.
++     *  - 'end'          : (marker) закрывающий маркер; null = до конца документа.
++     *  - 'expression'   : (xpath/meta/script/title) XPath; для meta — имя мета-тега.
++     *  - 'fallback_xpath': (marker) если маркеры не найдены — взять узел по XPath.
++     *  - 'required'     : true — отсутствие содержимого блока = ошибка импорта.
++     *  - 'strip_wrapper': (marker/xpath) снимать ли служебную обёртку <!DOCTYPE/html/head/body>.
++     *  - 'collect_styles': (marker/xpath) уносить ли <style> из блока в neutral-style.css.
++     *  - 'download_images': (marker/xpath) скачивать ли внешние <img> из блока.
++     *  - 'target'       : куда писать:
++     *        ['table' => 'pages', 'column' => 'content']            — обычная колонка;
++     *        ['table' => 'schema_org', 'mode' => 'rows',
++     *         'fields' => ['schema_type' => '{schema_type}', 'data' => '{json}']]
++     *            — режим 'rows': каждая найденая сущность = отдельная строка;
++     *              плейсхолдеры {json}, {schema_type}, {block} подставляются из данных;
++     *        ['mode' => 'json_array']                                — список значений
++     *              сериализуется в JSON-массив (для колонок типа json, напр. scripts).
++     *      Колонки table/column проверяются по information_schema перед записью;
++     *      запись идёт через подготовленные запросы (значения — только параметрами).
++     *  - 'transform'    : 'trim' | 'slug' | 'lowercase' | 'strip_tags' | 'plain_text'
++     *                     (применяется к строковому значению после извлечения).
++     *  - 'default'      : значение по умолчанию, если блок пуст (например slug из title).
++     *  - 'source'       : спец-источник: 'slug_from_title' — slug из заголовка страницы.
++     */
++    'blocks' => [
++
++        // Заголовок страницы → pages.title
++        'title' => [
++            'type'   => 'title',
++            'target' => ['table' => 'pages', 'column' => 'title'],
++            'required' => true,
++        ],
++
++        // Slug: генерируется из title (спец-источник), не парсится из HTML
++        'slug' => [
++            'source' => 'slug_from_title',
++            'target' => ['table' => 'pages', 'column' => 'slug'],
++        ],
++
++        // Meta description (og:description как fallback) → pages.description
++        'description' => [
++            'type'   => 'meta',
++            'expression' => 'description',
++            'fallback_meta' => ['property' => 'og:description'],
++            'target' => ['table' => 'pages', 'column' => 'description'],
++            'transform' => 'trim',
++        ],
++
++        // Основной контент между комментариями-маркерами → pages.content
++        'main_content' => [
++            'type'   => 'marker',
++            // Поддерживаются и старые маркеры движка, и произвольные вида
++            // <!-- nav --> ... <!-- end nav --> — задайте свои ниже.
++            'start'  => '<!-- ОСНОВНОЙ КОНТЕНТ -->',
++            'end'    => '<!-- FOOTER -->',
++            // Fallback, если маркеры не найдены:
++            'fallback_xpath' => '(//main | //article | //[@id="content"])[1]',
++            'strip_wrapper'  => true,
++            'collect_styles' => true,
++            'download_images' => true,
++            'verify_integrity' => true,
++            'required' => true,
++            'target'   => ['table' => 'pages', 'column' => 'content'],
++        ],
++
++        // Пример навигационного блока с маркерами вашего формата
++        // (раскомментируйте и адаптируйте target под свою таблицу/колонку):
++        // 'nav' => [
++        //     'type'  => 'marker',
++        //     'start' => '<---nav--->',
++        //     'end'   => '<---end nav--->',
++        //     'target' => ['table' => 'menu_items', 'column' => 'html'],
++        // ],
++
++        // Schema.org JSON-LD → строки таблицы schema_org
++        'schema' => [
++            'type'   => 'schema',
++            'target' => [
++                'table' => 'schema_org',
++                'mode'  => 'rows',
++                'fields' => [
++                    'schema_type' => '{schema_type}',
++                    'data'        => '{json}',
++                    'priority'    => 10,
++                ],
++            ],
++        ],
++
++        // Пути JS-скриптов → pages.scripts (JSON-массив)
++        'scripts' => [
++            'type'   => 'script',
++            'target' => ['table' => 'pages', 'column' => 'scripts', 'mode' => 'json_array'],
++            'default' => ['/assets/js/main.js'],
++        ],
++    ],
++
++    /**
++     * Псевдонимы маркеров: часто один и тот же логический блок называется
++     * по-разному в разных шаблонах. Формат — PCRE-регулярка без модификатора
++     * (модификаторы iu/s добавляются автоматически). Применяются, если
++     * основной 'start'/'end' блока не найден.
++     */
++    'marker_aliases' => [
++        'start' => [
++            '/<!--\\s*ОСНОВНОЙ\\s+КОНТЕНТ\\s*-->/u',
++            '/<!--\\s*(?:MAIN[_ ]?)?CONTENT\\s*-->/iu',
++            '/<!--[<-]*\\s*nav(?:\\s+(?:start|begin))?\\s*[>-]+-->/iu',
++        ],
++        'end' => [
++            '/<!--\\s*(?:PAGE\\s+)?FOOTER\\s*-->/iu',
++            '/<!--\\s*END\\s+(?:MAIN|CONTENT)\\s*-->/iu',
++            '/<!--[<-]*\\s*end\\s*nav\\s*[>-]+-->/iu',
++        ],
++    ],
++
+     /**
+      * Типы schema.org, чьё поле "name" является содержательным (название
+      * пункта меню, услуги, процедуры, шага, вопроса и т.п.) — НЕ подлежит
+diff --git a/config/page-content.php b/config/page-content.php
+index 3d5495f..b2304c5 100644
+--- a/config/page-content.php
++++ b/config/page-content.php
+@@ -27,15 +27,36 @@ return [
+     'default_script' => '/assets/js/main.js',
+ 
+     /**
+-     * Счётчик просмотров страницы.
+-     * Без троттлинга каждый GET выполнял UPDATE в БД — боты раздували
+-     * строку таблицы и создавали гонку обновлений (DoS-усилитель).
++     * Счётчик просмотров страницы (асинхронный, см. ViewCounter).
++     * Просмотры копятся в буфере (Redis либо storage/view_counter.json)
++     * и списываются в БД пакетно — одним UPDATE на пачку, а не на каждый GET.
+      */
+     'views' => [
+         // Учитывать ли просмотры вообще.
+         'count_enabled' => true,
+ 
+-        // Сколько секунд засчитывать только один просмотр на страницу+IP.
++        // Сколько секунд засчитывать только один просмотр на страницу+посетитель.
+         'throttle_seconds' => 300,
++
++        // Асинхронный режим: true — буфер + пакетный flush; false — прежний
++        // синхронный UPDATE на каждый просмотр (режим совместимости).
++        'async' => true,
++
++        // Когда в буфере накоплено N просмотров — планировать списание.
++        'flush_threshold' => 50,
++
++        // Минимальный интервал между списаниями, сек (защита от «лавины»
++        // concurrent-flush при пиковом трафике).
++        'flush_cooldown_seconds' => 10,
++
++        // TTL ключей буфера в Redis, сек (страховка от течения счётчиков).
++        'buffer_ttl' => 86400,
++
++        // Максимум страниц в одном пакетном UPDATE (защита от раздувания
++        // запроса и длинных блокировок).
++        'max_keys_per_flush' => 500,
++
++        // Лимит записей в файловом буфере (когда Redis недоступен).
++        'file_max_pages' => 1000,
+     ],
+ ];
+diff --git a/core/config/admin-dashboard.php b/core/config/admin-dashboard.php
+deleted file mode 100644
+index 67e90fc..0000000
+--- a/core/config/admin-dashboard.php
++++ /dev/null
+@@ -1,25 +0,0 @@
+-<?php
+-
+-declare(strict_types=1);
+-
+-/**
+- * VampqweEngineMedium — проприетарный PHP-движок
+- *
+- * @copyright  Copyright (c) 2024-2026. Все права защищены.
+- * @author     [Дедюля Александр Иванович / VampqweEngine]
+- * @license    Proprietary
+- *
+- * Конфиг модуля «Админ-панель → Дашборд».
+- * Управляет лимитами выборок на главной странице админки.
+- */
+-
+-return [
+-    // Сколько последних страниц показывать в блоке «Последние страницы»
+-    'recent_limit' => 5,
+-
+-    // Сколько записей показывать в блоке «Активность»
+-    'activity_limit' => 4,
+-
+-    // Жёсткий потолок любого лимита дашборда (защита от раздувания выборки)
+-    'max_limit' => 50,
+-];
+diff --git a/core/config/html-sanitizer.php b/core/config/html-sanitizer.php
+deleted file mode 100644
+index 0215e75..0000000
+--- a/core/config/html-sanitizer.php
++++ /dev/null
+@@ -1,50 +0,0 @@
+-<?php
+-
+-declare(strict_types=1);
+-
+-/**
+- * VampqweEngineMedium — проприетарный PHP-движок
+- *
+- * Правила HTML-санитизации (модуль «Система безопасности»).
+- * Управляют тем, какой HTML разрешён в контенте страниц после очистки
+- * Core\System\Security\HtmlSanitizer::clean() / cleanStrict().
+- */
+-
+-return [
+-
+-    // Разрешённые теги базового режима clean().
+-    'allowed_tags' => [
+-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+-        'p', 'br', 'hr', 'div', 'span',
+-        'strong', 'em', 'u', 'del', 'ins', 'small', 'sub', 'sup', 'b', 'i',
+-        'a', 'ul', 'ol', 'li',
+-        'img', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+-        'caption', 'colgroup', 'col',
+-        'blockquote', 'pre', 'code', 'figure', 'figcaption',
+-    ],
+-
+-    // Валидные атрибуты по тегам. Ключ '*' — глобальные атрибуты всех тегов.
+-    'allowed_attributes' => [
+-        '*'          => ['class', 'style', 'id', 'title'],
+-        'a'          => ['href', 'target', 'rel'],
+-        'img'        => ['src', 'alt', 'width', 'height'],
+-        'blockquote' => ['cite'],
+-        'td'         => ['colspan', 'rowspan'],
+-        'th'         => ['colspan', 'rowspan', 'scope'],
+-        'col'        => ['span'],
+-        'colgroup'   => ['span'],
+-        'ol'         => ['start', 'reversed', 'type'],
+-        'li'         => ['value'],
+-    ],
+-
+-    // Набор тегов строгого режима cleanStrict() (короткие текстовые поля).
+-    'strict_allowed_tags' => ['p', 'br', 'strong', 'em', 'a'],
+-
+-    // Атрибуты строгого режима (по тегам).
+-    'strict_allowed_attributes' => [
+-        'a' => ['href', 'title'],
+-    ],
+-
+-    // Схемы URL, запрещённые в href/src/cite и прочих URL-атрибутах.
+-    'dangerous_url_schemes' => ['javascript', 'vbscript', 'data', 'file'],
+-];
+diff --git a/core/config/import-parser.php b/core/config/import-parser.php
+deleted file mode 100644
+index 49b402e..0000000
+--- a/core/config/import-parser.php
++++ /dev/null
+@@ -1,212 +0,0 @@
+-<?php
+-
+-declare(strict_types=1);
+-
+-/**
+- * VampqweEngineMedium — проприетарный PHP-движок
+- *
+- * Правила парсинга/импорта HTML-страниц (модуль «Админ-панель»,
+- * сервис HtmlImportParser). Все управляемые значения импорта — здесь.
+- */
+-
+-return [
+-
+-    // Максимальный размер загружаемого HTML-файла, байт (20 МБ).
+-    'max_file_size' => 20 * 1024 * 1024,
+-
+-    // Максимальный размер скачиваемого изображения, байт (10 МБ).
+-    'max_image_size' => 10 * 1024 * 1024,
+-
+-    // Разрешённые расширения загружаемых файлов.
+-    'allowed_extensions' => ['html', 'htm'],
+-
+-    // Подкаталог storage для загруженных файлов импорта.
+-    'upload_dir' => 'uploads/import',
+-
+-    // Файл промежуточных стилей в storage (относительный путь).
+-    'styles_file' => 'neutral-style.css',
+-
+-    // Максимум редиректов при скачивании изображений.
+-    'image_max_redirects' => 3,
+-
+-    // Таймаут HTTP-запроса при скачивании изображений, сек.
+-    'image_timeout_s' => 10,
+-
+-    /**
+-     * Побитный режим импорта контента: true — pages.content сохраняется
+-     * ТОЧНЫМ срезом исходного HTML между маркерами main_content (включая
+-     * сами комментарии), без DOM-нормализации, скачивания картинок и сбора
+-     * стилей. Работает в связке с content_mode='raw' в config/page-content.php.
+-     */
+-    'content_raw' => true,
+-
+-    /**
+-     * ═══════════════════════════════════════════════════════════════════
+-     * БЛОКИ ИМПОРТА (гибкая конфигурация)
+-     * ═══════════════════════════════════════════════════════════════════
+-     *
+-     * Каждый блок = «что вытянуть из HTML» + «куда положить в БД».
+-     * Ключ массива — машинное имя блока (используется в отчёте предпросмотра).
+-     *
+-     * Поля описания блока:
+-     *  - 'type'         : 'marker' | 'xpath' | 'meta' | 'schema' | 'script' | 'title'
+-     *      marker — срез HTML между двумя комментариями-маркерами;
+-     *      xpath  — узлы по XPath-выражению (собирается innerHTML найденного узла);
+-     *      meta   — значение атрибута <meta name="..."> или property="...";
+-     *      schema — JSON-LD (application/ld+json), как раньше;
+-     *      script — пути <script src="...">;
+-     *      title  — <title>, иначе первый <h1>.
+-     *  - 'start'        : (marker) открывающий маркер. Строка — точное имя
+-     *                     комментария (регистронезависимо), либо регулярка '~...~'.
+-     *  - 'end'          : (marker) закрывающий маркер; null = до конца документа.
+-     *  - 'expression'   : (xpath/meta/script/title) XPath; для meta — имя мета-тега.
+-     *  - 'fallback_xpath': (marker) если маркеры не найдены — взять узел по XPath.
+-     *  - 'required'     : true — отсутствие содержимого блока = ошибка импорта.
+-     *  - 'strip_wrapper': (marker/xpath) снимать ли служебную обёртку <!DOCTYPE/html/head/body>.
+-     *  - 'collect_styles': (marker/xpath) уносить ли <style> из блока в neutral-style.css.
+-     *  - 'download_images': (marker/xpath) скачивать ли внешние <img> из блока.
+-     *  - 'target'       : куда писать:
+-     *        ['table' => 'pages', 'column' => 'content']            — обычная колонка;
+-     *        ['table' => 'schema_org', 'mode' => 'rows',
+-     *         'fields' => ['schema_type' => '{schema_type}', 'data' => '{json}']]
+-     *            — режим 'rows': каждая найденая сущность = отдельная строка;
+-     *              плейсхолдеры {json}, {schema_type}, {block} подставляются из данных;
+-     *        ['mode' => 'json_array']                                — список значений
+-     *              сериализуется в JSON-массив (для колонок типа json, напр. scripts).
+-     *      Колонки table/column проверяются по information_schema перед записью;
+-     *      запись идёт через подготовленные запросы (значения — только параметрами).
+-     *  - 'transform'    : 'trim' | 'slug' | 'lowercase' | 'strip_tags' | 'plain_text'
+-     *                     (применяется к строковому значению после извлечения).
+-     *  - 'default'      : значение по умолчанию, если блок пуст (например slug из title).
+-     *  - 'source'       : спец-источник: 'slug_from_title' — slug из заголовка страницы.
+-     */
+-    'blocks' => [
+-
+-        // Заголовок страницы → pages.title
+-        'title' => [
+-            'type'   => 'title',
+-            'target' => ['table' => 'pages', 'column' => 'title'],
+-            'required' => true,
+-        ],
+-
+-        // Slug: генерируется из title (спец-источник), не парсится из HTML
+-        'slug' => [
+-            'source' => 'slug_from_title',
+-            'target' => ['table' => 'pages', 'column' => 'slug'],
+-        ],
+-
+-        // Meta description (og:description как fallback) → pages.description
+-        'description' => [
+-            'type'   => 'meta',
+-            'expression' => 'description',
+-            'fallback_meta' => ['property' => 'og:description'],
+-            'target' => ['table' => 'pages', 'column' => 'description'],
+-            'transform' => 'trim',
+-        ],
+-
+-        // Основной контент между комментариями-маркерами → pages.content
+-        'main_content' => [
+-            'type'   => 'marker',
+-            // Поддерживаются и старые маркеры движка, и произвольные вида
+-            // <!-- nav --> ... <!-- end nav --> — задайте свои ниже.
+-            'start'  => '<!-- ОСНОВНОЙ КОНТЕНТ -->',
+-            'end'    => '<!-- FOOTER -->',
+-            // Fallback, если маркеры не найдены:
+-            'fallback_xpath' => '(//main | //article | //[@id="content"])[1]',
+-            'strip_wrapper'  => true,
+-            'collect_styles' => true,
+-            'download_images' => true,
+-            'verify_integrity' => true,
+-            'required' => true,
+-            'target'   => ['table' => 'pages', 'column' => 'content'],
+-        ],
+-
+-        // Пример навигационного блока с маркерами вашего формата
+-        // (раскомментируйте и адаптируйте target под свою таблицу/колонку):
+-        // 'nav' => [
+-        //     'type'  => 'marker',
+-        //     'start' => '<---nav--->',
+-        //     'end'   => '<---end nav--->',
+-        //     'target' => ['table' => 'menu_items', 'column' => 'html'],
+-        // ],
+-
+-        // Schema.org JSON-LD → строки таблицы schema_org
+-        'schema' => [
+-            'type'   => 'schema',
+-            'target' => [
+-                'table' => 'schema_org',
+-                'mode'  => 'rows',
+-                'fields' => [
+-                    'schema_type' => '{schema_type}',
+-                    'data'        => '{json}',
+-                    'priority'    => 10,
+-                ],
+-            ],
+-        ],
+-
+-        // Пути JS-скриптов → pages.scripts (JSON-массив)
+-        'scripts' => [
+-            'type'   => 'script',
+-            'target' => ['table' => 'pages', 'column' => 'scripts', 'mode' => 'json_array'],
+-            'default' => ['/assets/js/main.js'],
+-        ],
+-    ],
+-
+-    /**
+-     * Псевдонимы маркеров: часто один и тот же логический блок называется
+-     * по-разному в разных шаблонах. Формат — PCRE-регулярка без модификатора
+-     * (модификаторы iu/s добавляются автоматически). Применяются, если
+-     * основной 'start'/'end' блока не найден.
+-     */
+-    'marker_aliases' => [
+-        'start' => [
+-            '/<!--\\s*ОСНОВНОЙ\\s+КОНТЕНТ\\s*-->/u',
+-            '/<!--\\s*(?:MAIN[_ ]?)?CONTENT\\s*-->/iu',
+-            '/<!--[<-]*\\s*nav(?:\\s+(?:start|begin))?\\s*[>-]+-->/iu',
+-        ],
+-        'end' => [
+-            '/<!--\\s*(?:PAGE\\s+)?FOOTER\\s*-->/iu',
+-            '/<!--\\s*END\\s+(?:MAIN|CONTENT)\\s*-->/iu',
+-            '/<!--[<-]*\\s*end\\s*nav\\s*[>-]+-->/iu',
+-        ],
+-    ],
+-
+-    /**
+-     * Типы schema.org, чьё поле "name" является содержательным (название
+-     * пункта меню, услуги, процедуры, шага, вопроса и т.п.) — НЕ подлежит
+-     * замене на APP_NAME. Для всех прочих типов (Organization, WebSite,
+-     * LocalBusiness, Physician и др.) имя бренда подставляется тотально.
+-     */
+-    'name_keep_types' => [
+-        // Структурные / навигационные
+-        'ListItem',
+-        'SiteNavigationElement',
+-        'BreadcrumbList',
+-        'HowToStep',
+-        'HowToSection',
+-        'ItemList',
+-        // Коммерческие сущности
+-        'Offer',
+-        'Demand',
+-        'Product',
+-        'Service',
+-        'ProgramMembership',
+-        // Медицинский контент
+-        'MedicalProcedure',
+-        'MedicalTherapy',
+-        'MedicalTest',
+-        'MedicalCondition',
+-        'MedicalSymptom',
+-        'MedicalCause',
+-        'MedicalRiskFactor',
+-        'DietarySupplement',
+-        'ExercisePlan',
+-        // FAQ / события / медиа
+-        'Question',
+-        'Answer',
+-        'Event',
+-        'ImageObject',
+-        'VideoObject',
+-        'AudioObject',
+-    ],
+-];
+diff --git a/core/config/page-content.php b/core/config/page-content.php
+deleted file mode 100644
+index b2304c5..0000000
+--- a/core/config/page-content.php
++++ /dev/null
+@@ -1,62 +0,0 @@
+-<?php
+-
+-declare(strict_types=1);
+-
+-/**
+- * VampqweEngineMedium — проприетарный PHP-движок
+- *
+- * Правила обработки контента страниц (модуль «Система управления
+- * страницами»). Управляют санитизацией HTML при сохранении из админки.
+- */
+-
+-return [
+-
+-    /**
+-     * Режим санитизации поля page.content при create/update из админки:
+-     *  - 'sanitize' : прогонять через HtmlSanitizer::clean() (рекомендуется,
+-     *                 блокирует stored-XSS от редакторов);
+-     *  - 'raw'      : сохранять как есть (только для полностью доверенных
+-     *                 супер-админов; требует честной оценки рисков).
+-     */
+-    'content_mode' => 'raw',
+-
+-    // Максимальная длина контента страницы, символов (защита от раздувания БД).
+-    'max_content_length' => 2_000_000,
+-
+-    // Путь дефолтного скрипта, автоматически добавляемого к страницам.
+-    'default_script' => '/assets/js/main.js',
+-
+-    /**
+-     * Счётчик просмотров страницы (асинхронный, см. ViewCounter).
+-     * Просмотры копятся в буфере (Redis либо storage/view_counter.json)
+-     * и списываются в БД пакетно — одним UPDATE на пачку, а не на каждый GET.
+-     */
+-    'views' => [
+-        // Учитывать ли просмотры вообще.
+-        'count_enabled' => true,
+-
+-        // Сколько секунд засчитывать только один просмотр на страницу+посетитель.
+-        'throttle_seconds' => 300,
+-
+-        // Асинхронный режим: true — буфер + пакетный flush; false — прежний
+-        // синхронный UPDATE на каждый просмотр (режим совместимости).
+-        'async' => true,
+-
+-        // Когда в буфере накоплено N просмотров — планировать списание.
+-        'flush_threshold' => 50,
+-
+-        // Минимальный интервал между списаниями, сек (защита от «лавины»
+-        // concurrent-flush при пиковом трафике).
+-        'flush_cooldown_seconds' => 10,
+-
+-        // TTL ключей буфера в Redis, сек (страховка от течения счётчиков).
+-        'buffer_ttl' => 86400,
+-
+-        // Максимум страниц в одном пакетном UPDATE (защита от раздувания
+-        // запроса и длинных блокировок).
+-        'max_keys_per_flush' => 500,
+-
+-        // Лимит записей в файловом буфере (когда Redis недоступен).
+-        'file_max_pages' => 1000,
+-    ],
+-];
+-- 
+2.39.5
+

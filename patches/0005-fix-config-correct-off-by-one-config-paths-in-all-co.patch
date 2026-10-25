@@ -1,0 +1,169 @@
+From 34cacac8f68bcd301c6a22106896d2f381d4b73d Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Sun, 25 Oct 2026 05:57:44 +0000
+Subject: [PATCH 5/6] fix(config): correct off-by-one config paths in all
+ consumers; configs now load from root config/
+
+- Page/ViewCounter, Page/PageService, system/Template: dirname levels 4->5 (page-content.php)
+- system/Security/HtmlSanitizer: 4->5 (html-sanitizer.php)
+- Admin controllers/services (ImportController, PagesController, AdminService, ImportJobHandler, HtmlImportParser): 5->6 (import-parser.php, page-content.php, admin-dashboard.php)
+- Verified: php -l clean, path resolvability smoke OK, PHPUnit 107 tests / 283 assertions green
+---
+ core/classes/module/Admin/Controllers/ImportController.php | 6 +++---
+ core/classes/module/Admin/Controllers/PagesController.php  | 2 +-
+ core/classes/module/Admin/Services/AdminService.php        | 2 +-
+ core/classes/module/Admin/Services/HtmlImportParser.php    | 2 +-
+ core/classes/module/Admin/Services/ImportJobHandler.php    | 4 ++--
+ core/classes/module/Page/PageService.php                   | 2 +-
+ core/classes/module/Page/ViewCounter.php                   | 2 +-
+ core/classes/system/Security/HtmlSanitizer.php             | 2 +-
+ core/classes/system/Template/Template.php                  | 2 +-
+ 9 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/core/classes/module/Admin/Controllers/ImportController.php b/core/classes/module/Admin/Controllers/ImportController.php
+index 127ee8d..50d1b5a 100644
+--- a/core/classes/module/Admin/Controllers/ImportController.php
++++ b/core/classes/module/Admin/Controllers/ImportController.php
+@@ -74,7 +74,7 @@ class ImportController
+     private function prepareImportedContent(string $html, bool $rawSlice = false): string
+     {
+         if ($rawSlice) {
+-            $rulesFile = dirname(__DIR__, 5) . '/config/import-parser.php';
++            $rulesFile = dirname(__DIR__, 6) . '/config/import-parser.php';
+             $rules = is_file($rulesFile) ? (array) require $rulesFile : [];
+             if (($rules['content_raw'] ?? false) === true) {
+                 return $html;
+@@ -91,7 +91,7 @@ class ImportController
+      */
+     private function sanitizeImportedContent(string $html): string
+     {
+-        $cfg = require dirname(__DIR__, 5) . '/config/page-content.php';
++        $cfg = require dirname(__DIR__, 6) . '/config/page-content.php';
+         $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
+         $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
+ 
+@@ -228,7 +228,7 @@ class ImportController
+         $canonical = $baseUrl . '/' . ltrim($parsed['slug'], '/');
+ 
+         // JS-скрипты: дефолтный скрипт из config/page-content.php + извлечённые со страницы
+-        $pageCfg = require dirname(__DIR__, 5) . '/config/page-content.php';
++        $pageCfg = require dirname(__DIR__, 6) . '/config/page-content.php';
+         $defaultScript = (string) ($pageCfg['default_script'] ?? '/assets/js/main.js');
+         $scripts = $parsed['scripts'] ?? [];
+         if ($defaultScript !== '' && !in_array($defaultScript, $scripts, true)) {
+diff --git a/core/classes/module/Admin/Controllers/PagesController.php b/core/classes/module/Admin/Controllers/PagesController.php
+index b480b1a..8cb93c2 100644
+--- a/core/classes/module/Admin/Controllers/PagesController.php
++++ b/core/classes/module/Admin/Controllers/PagesController.php
+@@ -69,7 +69,7 @@ class PagesController
+      */
+     private function sanitizeContent(string $html): string
+     {
+-        $cfg = require dirname(__DIR__, 5) . '/config/page-content.php';
++        $cfg = require dirname(__DIR__, 6) . '/config/page-content.php';
+         $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
+         $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
+ 
+diff --git a/core/classes/module/Admin/Services/AdminService.php b/core/classes/module/Admin/Services/AdminService.php
+index 260fcb4..1ddf71b 100644
+--- a/core/classes/module/Admin/Services/AdminService.php
++++ b/core/classes/module/Admin/Services/AdminService.php
+@@ -52,7 +52,7 @@ class AdminService
+      */
+     private function loadLimits(): array
+     {
+-        $file = dirname(__DIR__, 5) . '/config/admin-dashboard.php';
++        $file = dirname(__DIR__, 6) . '/config/admin-dashboard.php';
+         $cfg = is_file($file) ? require $file : [];
+ 
+         return [
+diff --git a/core/classes/module/Admin/Services/HtmlImportParser.php b/core/classes/module/Admin/Services/HtmlImportParser.php
+index 0530add..f1e2020 100644
+--- a/core/classes/module/Admin/Services/HtmlImportParser.php
++++ b/core/classes/module/Admin/Services/HtmlImportParser.php
+@@ -47,7 +47,7 @@ class HtmlImportParser
+         $this->config = $config;
+ 
+         // Единая точка управления правилами парсинга — config/import-parser.php
+-        $rulesFile = dirname(__DIR__, 5) . '/config/import-parser.php';
++        $rulesFile = dirname(__DIR__, 6) . '/config/import-parser.php';
+         $this->rules = is_file($rulesFile) ? (array) require $rulesFile : [];
+ 
+         // Получаем реальный путь к storage (с правильным регистром)
+diff --git a/core/classes/module/Admin/Services/ImportJobHandler.php b/core/classes/module/Admin/Services/ImportJobHandler.php
+index 469774d..c37790b 100644
+--- a/core/classes/module/Admin/Services/ImportJobHandler.php
++++ b/core/classes/module/Admin/Services/ImportJobHandler.php
+@@ -150,7 +150,7 @@ class ImportJobHandler
+             $baseUrl = rtrim((string) $this->config->get('APP_BASE_URL', ''), '/');
+             $canonical = $baseUrl . '/' . ltrim((string) $parsed['slug'], '/');
+ 
+-            $pageCfg = require dirname(__DIR__, 5) . '/config/page-content.php';
++            $pageCfg = require dirname(__DIR__, 6) . '/config/page-content.php';
+             $defaultScript = (string) ($pageCfg['default_script'] ?? '/assets/js/main.js');
+             $scripts = $parsed['scripts'] ?? [];
+             if ($defaultScript !== '' && !in_array($defaultScript, $scripts, true)) {
+@@ -279,7 +279,7 @@ class ImportJobHandler
+ 
+     private function sanitizeContent(string $html): string
+     {
+-        $cfg = require dirname(__DIR__, 5) . '/config/page-content.php';
++        $cfg = require dirname(__DIR__, 6) . '/config/page-content.php';
+         $mode = (string) ($cfg['content_mode'] ?? 'sanitize');
+         $maxLen = (int) ($cfg['max_content_length'] ?? 2_000_000);
+ 
+diff --git a/core/classes/module/Page/PageService.php b/core/classes/module/Page/PageService.php
+index df1f10d..bc3a843 100644
+--- a/core/classes/module/Page/PageService.php
++++ b/core/classes/module/Page/PageService.php
+@@ -143,7 +143,7 @@ class PageService
+     {
+         static $cfg = null;
+         if ($cfg === null) {
+-            $path = dirname(__DIR__, 4) . '/config/page-content.php';
++            $path = dirname(__DIR__, 5) . '/config/page-content.php';
+             $cfg = is_file($path) ? require $path : [];
+         }
+         return $cfg[$key] ?? null;
+diff --git a/core/classes/module/Page/ViewCounter.php b/core/classes/module/Page/ViewCounter.php
+index 141c05a..1094dd1 100644
+--- a/core/classes/module/Page/ViewCounter.php
++++ b/core/classes/module/Page/ViewCounter.php
+@@ -234,7 +234,7 @@ class ViewCounter
+             return $this->viewsCached = $this->viewsOverride;
+         }
+ 
+-        $path = dirname(__DIR__, 4) . '/config/page-content.php';
++        $path = dirname(__DIR__, 5) . '/config/page-content.php';
+         $full = is_file($path) ? (array) require $path : [];
+         return $this->viewsCached = (array) ($full['views'] ?? []);
+     }
+diff --git a/core/classes/system/Security/HtmlSanitizer.php b/core/classes/system/Security/HtmlSanitizer.php
+index 3663e1e..9e7acce 100644
+--- a/core/classes/system/Security/HtmlSanitizer.php
++++ b/core/classes/system/Security/HtmlSanitizer.php
+@@ -43,7 +43,7 @@ class HtmlSanitizer
+     private static function config(): array
+     {
+         if (self::$config === null) {
+-            $path = dirname(__DIR__, 4) . '/config/html-sanitizer.php';
++            $path = dirname(__DIR__, 5) . '/config/html-sanitizer.php';
+             self::$config = is_file($path) ? require $path : [];
+         }
+         return self::$config;
+diff --git a/core/classes/system/Template/Template.php b/core/classes/system/Template/Template.php
+index e427911..356a39b 100644
+--- a/core/classes/system/Template/Template.php
++++ b/core/classes/system/Template/Template.php
+@@ -196,7 +196,7 @@ class Template
+         // Исключение: 'raw' — политика «контент хранится и выводится как есть»
+         // (согласованно с записью: PagesController/ImportController при 'raw'
+         // не санитизируют). Sanitize на выводе молча ломала побитный импорт.
+-        $modeFile = dirname(__DIR__, 4) . '/config/page-content.php';
++        $modeFile = dirname(__DIR__, 5) . '/config/page-content.php';
+         $mode = 'sanitize';
+         if (is_file($modeFile)) {
+             $modeCfg = (array) require $modeFile;
+-- 
+2.39.5
+

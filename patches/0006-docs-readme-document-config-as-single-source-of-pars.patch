@@ -1,0 +1,26 @@
+From c49305978b17574c502083456bae997b112a5fde Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Sun, 25 Oct 2026 05:57:49 +0000
+Subject: [PATCH 6/6] docs(readme): document config/ as single source of parser
+ configs with corrected dirname levels
+
+---
+ readme.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/readme.md b/readme.md
+index d19baba..43f0e59 100644
+--- a/readme.md
++++ b/readme.md
+@@ -38,7 +38,7 @@
+ ├── composer.json       # только autoload + php>=8.1 + ext-dom
+ ├── bin/
+ │   └── install-key.php # CLI: generate/revoke ключ активации мастера установки
+-├── config/             # PHP-конфиги подсистем (не env!)
++├── config/             # PHP-конфиги подсистем (не env!): admin-dashboard.php, html-sanitizer.php, import-parser.php, page-content.php — ЕДИНСТВЕННАЯ рабочая папка конфигов; core/config/ удалена. Пути в коде: dirname(__DIR__, N) от файла класса до корня (Page/System-классы N=5, Admin-классы N=6) + '/config/...'
+ │   ├── admin-dashboard.php
+ │   ├── html-sanitizer.php   # allowlist тегов/атрибутов для HtmlSanitizer
+ │   ├── import-parser.php    # настройки HtmlImportParser
+-- 
+2.39.5
+
