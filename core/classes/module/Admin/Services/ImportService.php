@@ -21,6 +21,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Services;
 
 use Core\System\DataBase\DataBase;
+use Core\System\Validator\Rules\JsonRule;
 use PDO;
 
 /**
@@ -157,7 +158,10 @@ class ImportService
             ];
         }
 
-        // Дедупликация для schema_org (uk_page_schema page_id+schema_type)
+        // Дедупликация для schema_org (uk_page_schema page_id+schema_type).
+        // Глобальные схемы (page_id IS NULL, привязка через route) импортом
+        // страниц не создаются и не затрагиваются — здесь только строки,
+        // привязанные к текущей странице.
         $takenTypes = [];
         if ($table === 'schema_org' && isset($context['page_id'])) {
             $takenTypes = array_flip(array_map(
@@ -173,16 +177,41 @@ class ImportService
             $data = [];
             foreach ($fields as $col => $pattern) {
                 $value = $this->resolveField((string) $col, $pattern, $row, $i);
-                // Фолбэк контракта: если шаблона «{колонка}» в строке нет,
-                // берём значение из одноимённой колонки строки парсера.
-                // Парсер (HtmlParser::extractSchema) отдаёт rows-строки с
-                // ключом 'data', а конфиг import-parser.php описывает
-                // плейсхолдер '{json}' — без фолбэка в NOT NULL колонку
-                // schema_org.data попадал NULL и схема не записывалась.
-                if ($value === null && !isset($row[$col])) {
-                    $value = $row[(string) $col] ?? null;
+                // Фолбэк контракта: если разрешённого значения нет (null или
+                // пустая строка), берём значение из одноимённой колонки
+                // строки парсера. Парсер (HtmlParser::extractSchema) отдаёт
+                // rows-строки с ключом 'data', а конфиг import-parser.php
+                // описывает плейсхолдер '{json}' — без фолбэка в NOT NULL
+                // колонку schema_org.data попадал NULL и схема не записывалась.
+                if (($value === null || $value === '') && isset($row[$col])
+                    && $row[$col] !== '' && $row[$col] !== null) {
+                    $value = $row[(string) $col];
                 }
                 $data[(string) $col] = $value;
+            }
+
+            // Валидация JSON перед записью: колонки с типом json в MySQL
+            // отклоняют синтаксически битый JSON на уровне SQL (исключение
+            // PDO срывает всю транзакцию импорта). Проверяем содержимое
+            // заранее и превращаем проблему в понятную ошибку конкретного
+            // блока — строка просто не записывается, импорт продолжается.
+            if ($table === 'schema_org' && isset($data['data'])) {
+                if (!JsonRule::isValidStructure($data['data'])) {
+                    $errors[] = "Строка #{$i} таблицы {$table}: «data» не является валидным"
+                        . " JSON-объектом/массивом — запись пропущена";
+                    $skipped++;
+                    continue;
+                }
+                // Контракт SchemaService::normalizeSchema(): движок сам
+                // добавляет @context/@type при рендеринге, в колонке data
+                // их быть не должно. Парсер кладёт полный JSON-LD — срезаем
+                // служебные поля верхнего уровня (вложенные @type в @graph,
+                // itemListElement и т.п. остаются нетронутыми).
+                $decoded = json_decode((string) $data['data'], true);
+                if (is_array($decoded)) {
+                    unset($decoded['@context'], $decoded['@type']);
+                    $data['data'] = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
             }
             foreach ($context as $col => $v) {
                 $data[(string) $col] = $v;

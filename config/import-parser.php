@@ -192,6 +192,8 @@ return [
         // ],
 
         // Schema.org JSON-LD → строки таблицы schema_org
+        // Ключи плейсхолдеров = колонки rows-строки парсера
+        // (HtmlParser::extractSchema отдаёт schema_type/data/priority).
         'schema' => [
             'type'   => 'schema',
             'target' => [
@@ -199,7 +201,7 @@ return [
                 'mode'  => 'rows',
                 'fields' => [
                     'schema_type' => '{schema_type}',
-                    'data'        => '{json}',
+                    'data'        => '{data}',
                     'priority'    => 10,
                 ],
             ],

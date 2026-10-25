@@ -32,6 +32,7 @@ use Core\System\Validator\Rules\NumericRule;
 use Core\System\Validator\Rules\RegexRule;
 use Core\System\Validator\Rules\RequiredRule;
 use Core\System\Validator\Rules\UrlRule;
+use Core\System\Validator\Rules\JsonRule;
 use InvalidArgumentException;
 use LogicException;
 
@@ -131,6 +132,15 @@ class Validator
     public function url(): self
     {
         $this->addCurrentRule(new UrlRule());
+        return $this;
+    }
+
+    /**
+     * Значение должно содержать валидный JSON (строку, декодируемую в массив).
+     */
+    public function json(): self
+    {
+        $this->addCurrentRule(new JsonRule());
         return $this;
     }
 
