@@ -1,0 +1,133 @@
+<?php $__template->setLayout('admin/layouts/admin'); ?>
+
+<?php $__template->startSection('page_title', ); ?>
+Редиректы
+<?php $__template->endSection('page_title'); ?>
+
+<?php $__template->startSection('content', ); ?>
+<?php echo $csrf_meta ?? ''; ?>
+
+<?php if (!empty($flash['error'])): ?>
+<div class="flash-message flash-error"><?= htmlspecialchars($flash['error'], ENT_QUOTES, 'UTF-8') ?></div>
+<?php endif; ?>
+
+<?php if (!empty($flash['success'])): ?>
+<div class="flash-message flash-success"><?= htmlspecialchars($flash['success'], ENT_QUOTES, 'UTF-8') ?></div>
+<?php endif; ?>
+
+<!-- Форма создания -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Новый редирект</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="/admin/redirects/store">
+            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="source">Источник (путь на сайте)</label>
+                    <input type="text" id="source" name="source" placeholder="/old-page" required maxlength="500">
+                </div>
+                <div class="form-group">
+                    <label for="destination">Назначение (путь или http(s)-URL)</label>
+                    <input type="text" id="destination" name="destination" placeholder="/new-page" required maxlength="500">
+                </div>
+                <div class="form-group">
+                    <label for="status_code">Код</label>
+                    <select id="status_code" name="status_code">
+                        <option value="301">301 — постоянный</option>
+                        <option value="302">302 — временный</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="note">Заметка</label>
+                    <input type="text" id="note" name="note" placeholder="зачем создан" maxlength="255">
+                </div>
+            </div>
+            <div class="form-group checkbox-inline">
+                <label><input type="checkbox" name="is_active" value="1" checked> Активен</label>
+                <button type="submit" class="btn btn-primary btn-sm">Создать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Поиск -->
+<form method="GET" action="/admin/redirects" class="toolbar-form">
+    <input type="search" name="q" value="<?= htmlspecialchars($search ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="Поиск по source / destination…" maxlength="200">
+    <button type="submit" class="btn btn-secondary btn-sm">Найти</button>
+    <?php if (($search ?? '') !== ''): ?>
+    <a href="/admin/redirects" class="btn btn-secondary btn-sm">Сброс</a>
+    <?php endif; ?>
+</form>
+
+<!-- Список -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Список редиректов</h3>
+        <span class="menu-count-badge"><?= (int) ($total ?? 0) ?></span>
+    </div>
+    <div class="card-body card-body-flush">
+        <?php if (empty($items)): ?>
+        <p class="empty-hint">Редиректов нет<?= ($search ?? '') !== '' ? ' по запросу «' . htmlspecialchars($search, ENT_QUOTES, 'UTF-8') . '»' : '' ?>.</p>
+        <?php else: ?>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Источник</th>
+                    <th>Назначение</th>
+                    <th>Код</th>
+                    <th>Статус</th>
+                    <th>Срабатывания</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($items as $r): ?>
+                <tr>
+                    <td><code><?= htmlspecialchars($r['source'], ENT_QUOTES, 'UTF-8') ?></code></td>
+                    <td><code><?= htmlspecialchars($r['destination'], ENT_QUOTES, 'UTF-8') ?></code></td>
+                    <td><?= (int) $r['status_code'] ?></td>
+                    <td>
+                        <?php if ((int) $r['is_active'] === 1): ?>
+                        <span class="badge badge-success">активен</span>
+                        <?php else: ?>
+                        <span class="badge badge-muted">выключен</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><?= (int) $r['hit_count'] ?></td>
+                    <td class="table-actions">
+                        <a href="/admin/redirects/<?= (int) $r['id'] ?>/edit" class="btn btn-secondary btn-sm">Изменить</a>
+                        <form method="POST" action="/admin/redirects/<?= (int) $r['id'] ?>/reset-hits" class="inline-form">
+                            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <button type="submit" class="btn btn-secondary btn-sm">Сброс счётчика</button>
+                        </form>
+                        <form method="POST" action="/admin/redirects/<?= (int) $r['id'] ?>/delete" class="inline-form"
+                              onsubmit="return confirm('Удалить этот редирект?');">
+                            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <?php
+        $pages = (int) ceil(((int) ($total ?? 0)) / max(1, (int) ($per_page ?? 50)));
+        if ($pages > 1):
+        ?>
+        <div class="pagination">
+            <?php for ($i = 1; $i <= $pages; $i++): ?>
+                <?php if ($i === (int) ($page ?? 1)): ?>
+                <span class="page-current"><?= $i ?></span>
+                <?php else: ?>
+                <a class="page-link" href="/admin/redirects?page=<?= $i ?><?= ($search ?? '') !== '' ? '&q=' . rawurlencode($search) : '' ?>"><?= $i ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
+    </div>
+</div>
+<?php $__template->endSection('content'); ?>

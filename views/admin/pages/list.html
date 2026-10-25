@@ -1,0 +1,80 @@
+@extends('admin/layouts/admin')
+
+@section('page_title')
+Страницы
+@endsection
+
+@section('page_subtitle')
+Управление контентом сайта
+@endsection
+
+@section('content')
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Все страницы ({{ pagination.total }})</h3>
+        <a href="/admin/pages/new" class="btn btn-primary">➕ Новая страница</a>
+    </div>
+    <div class="card-body">
+        @if(!empty(flash.error))
+        <div class="flash-message flash-error">{{ flash.error }}</div>
+        @endif
+
+        @if(!empty(flash.success))
+        <div class="flash-message flash-success">{{ flash.success }}</div>
+        @endif
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Заголовок</th>
+                    <th>Slug</th>
+                    <th>Автор</th>
+                    <th>Статус</th>
+                    <th>Дата изменения</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach(pages as page)
+                <tr>
+                    <td>{{ page.title }}</td>
+                    <td><code>{{ page.slug }}</code></td>
+                    <td>{{ page.author_name ?? '—' }}</td>
+                    <td>
+                        @if(page.status == 'published')
+                        <span class="badge badge-success">Опубликовано</span>
+                        @elseif(page.status == 'draft')
+                        <span class="badge badge-warning">Черновик</span>
+                        @else
+                        <span class="badge badge-danger">Архив</span>
+                        @endif
+                    </td>
+                    <td>{{ page.updated_at }}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <a href="/admin/pages/{{ page.id }}/edit" class="btn btn-sm btn-primary">✏️</a>
+                            <form method="POST" action="/admin/pages/{{ page.id }}/delete" style="display: inline;" onsubmit="return confirm('Удалить страницу?');">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+
+        @if(pagination.totalPages > 1)
+        <div class="pagination">
+            @if(pagination.page > 1)
+            <a href="?page={{ pagination.page - 1 }}" class="btn btn-secondary">← Назад</a>
+            @endif
+            <span>Страница {{ pagination.page }} из {{ pagination.totalPages }}</span>
+            @if(pagination.page < pagination.totalPages)
+            <a href="?page={{ pagination.page + 1 }}" class="btn btn-secondary">Вперёд →</a>
+            @endif
+        </div>
+        @endif
+    </div>
+</div>
+@endsection

@@ -1,0 +1,188 @@
+<?php $__template->setLayout('admin/layouts/admin'); ?>
+
+<?php $__template->startSection('page_title', ); ?>
+Предпросмотр импорта
+<?php $__template->endSection('page_title'); ?>
+
+<?php $__template->startSection('page_subtitle', ); ?>
+Проверьте данные перед сохранением
+<?php $__template->endSection('page_subtitle'); ?>
+
+<?php $__template->startSection('content', ); ?>
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Результат парсинга</h3>
+    </div>
+    <div class="card-body">
+        <?php if (!empty($flash['error'])): ?>
+        <div class="flash-message flash-error"><?= htmlspecialchars($flash['error'], ENT_QUOTES, 'UTF-8') ?></div>
+        <?php endif; ?>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Заголовок</div>
+                <div style="color: var(--text-primary); font-weight: 600;"><?= htmlspecialchars($parsed['title'], ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Slug</div>
+                <div style="color: var(--teal-light); font-family: monospace;"><?= htmlspecialchars($parsed['slug'], ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Описание</div>
+                <div style="color: var(--text-primary); font-size: 0.875rem;"><?= htmlspecialchars($parsed['description'], ENT_QUOTES, 'UTF-8') ?: '—' ?></div>
+            </div>
+
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Картинки скачано</div>
+                <div style="color: var(--green); font-weight: 600;"><?= $parsed['images_count'] ?> шт.</div>
+            </div>
+
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">JS-скрипты (в БД)</div>
+                <ul style="color: var(--text-primary); font-size: 0.8rem; margin-top: 0.25rem; margin-left: 1rem;">
+                    <?php foreach (($parsed['scripts'] ?? ['/assets/js/main.js']) as $script): ?>
+                    <li style="font-family: monospace;"><?= htmlspecialchars($script, ENT_QUOTES, 'UTF-8') ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Стили извлечено</div>
+                <div style="color: var(--teal-light); font-weight: 600;"><?= number_format($parsed['styles_extracted']) ?> байт</div>
+            </div>
+			
+			<div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Schema.org найдено</div>
+                <div style="color: var(--teal-light); font-weight: 600;">
+                    <?= count($parsed['schemas']) ?> шт.
+                </div>
+                <?php if (!empty($parsed['schemas'])): ?>
+                <ul style="color: var(--text-primary); font-size: 0.8rem; margin-top: 0.5rem; margin-left: 1rem;">
+                    <?php foreach ($parsed['schemas'] as $schema): ?>
+                    <li><?= htmlspecialchars($schema['schema_type'], ENT_QUOTES, 'UTF-8') ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php endif; ?>
+			</div>
+
+            <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px;">
+                <div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">Статус</div>
+                <?php if ($existing): ?>
+                <div style="color: var(--red); font-weight: 600;">️ Страница уже существует</div>
+                <?php else: ?>
+                <div style="color: var(--green); font-weight: 600;">✅ Готов к импорту</div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+		<div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; margin-bottom: 2rem;">
+			<div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.5rem;">
+				Предпросмотр контента (длина: <?= strlen($parsed['content']) ?> символов)
+			</div>
+			<div style="color: var(--text-primary); max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); padding: 1rem; border-radius: 4px; background: var(--bg-secondary); line-height: 1.6;">
+				<?php if (empty(trim($parsed['content']))): ?>
+					<em style="color: var(--red);">Контент пуст. Проверьте исходный HTML — парсер не нашёл маркеры &lt;!-- ОСНОВНОЙ КОНТЕНТ --&gt; ... &lt;!-- CTA --&gt; и основные теги &lt;main&gt;/&lt;article&gt;.</em>
+				<?php else: ?>
+						
+						<iframe srcdoc="<?= htmlspecialchars($parsed['content'], ENT_QUOTES, 'UTF-8') ?>"
+								sandbox=""
+								style="width: 100%; height: 380px; border: 0; background: #fff; border-radius: 4px;"
+								title="Предпросмотр контента"></iframe>
+					<?php endif; ?>
+			</div>
+		</div>
+
+		
+		<div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; margin-bottom: 2rem;">
+			<div style="color: var(--silver); font-size: 0.875rem; margin-bottom: 0.75rem; font-weight: 600;">
+				Блоки импорта (<?php echo htmlspecialchars((string) (count($blocks_config ?? [])), ENT_QUOTES, 'UTF-8'); ?>)
+			</div>
+			<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; color: var(--text-primary);">
+				<thead>
+					<tr style="text-align: left; color: var(--silver); border-bottom: 1px solid var(--border-color);">
+						<th style="padding: 0.4rem 0.6rem;">Блок</th>
+						<th style="padding: 0.4rem 0.6rem;">Тип</th>
+						<th style="padding: 0.4rem 0.6rem;">Источник</th>
+						<th style="padding: 0.4rem 0.6rem;">Куда пишет</th>
+						<th style="padding: 0.4rem 0.6rem;">Статус</th>
+						<th style="padding: 0.4rem 0.6rem;">Извлечённый текст (фрагмент)</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach (($blocks_config ?? []) as $blockName => $blockDef): ?>
+					<?php
+						$res = $parsed['blocks'][$blockName] ?? null;
+						$target = (array) ($blockDef['target'] ?? []);
+						$mode = (string) ($target['mode'] ?? 'column');
+						if ($mode === 'rows') {
+							$dest = 'таблица ' . ($target['table'] ?? '?') . ' (' . count((array) ($res['rows'] ?? [])) . ' строк)';
+						} elseif ($mode === 'json_array') {
+							$dest = ($target['table'] ?? 'pages') . '.' . ($target['column'] ?? '?') . ' [JSON-массив]';
+						} else {
+							$dest = ($target['table'] ?? 'pages') . '.' . ($target['column'] ?? '—');
+						}
+						$srcDesc = (string) ($blockDef['source'] ?? '');
+						if ($srcDesc === '') {
+							$srcDesc = match ((string) ($blockDef['type'] ?? '')) {
+								'marker' => trim((string) ($blockDef['start'] ?? '')) . ' … ' . (isset($blockDef['end']) && $blockDef['end'] !== null ? trim((string) $blockDef['end']) : '(до конца)'),
+								'xpath' => 'XPath: ' . (string) ($blockDef['expression'] ?? ''),
+								'meta' => '&lt;meta ' . (string) ($blockDef['expression'] ?? '') . '&gt;',
+								default => (string) ($blockDef['type'] ?? ''),
+							};
+						}
+						$found = ($res['found'] ?? false) === true;
+						$text = (string) (($block_texts[$blockName] ?? '') ?: '');
+						$textPreview = mb_strlen($text) > 160 ? mb_substr($text, 0, 160) . '…' : $text;
+					?>
+					<tr style="border-bottom: 1px solid var(--border-color); vertical-align: top;">
+						<td style="padding: 0.4rem 0.6rem; font-family: monospace;"><?= htmlspecialchars((string) $blockName, ENT_QUOTES, 'UTF-8') ?><?= !empty($blockDef['required']) ? ' <span style="color: var(--red);">*</span>' : '' ?></td>
+						<td style="padding: 0.4rem 0.6rem;"><?= htmlspecialchars((string) ($blockDef['type'] ?? ($blockDef['source'] !== '' ? 'source' : '?')), ENT_QUOTES, 'UTF-8') ?></td>
+						<td style="padding: 0.4rem 0.6rem;"><code style="font-size: 0.75rem; word-break: break-all;"><?= htmlspecialchars($srcDesc, ENT_QUOTES, 'UTF-8') ?></code></td>
+						<td style="padding: 0.4rem 0.6rem;"><?= htmlspecialchars($dest, ENT_QUOTES, 'UTF-8') ?></td>
+						<td style="padding: 0.4rem 0.6rem; white-space: nowrap;">
+							<?php if ($found): ?>
+							<span style="color: var(--green); font-weight: 600;">✅ найден</span>
+							<?php else: ?>
+							<span style="color: <?= !empty($blockDef['required']) ? 'var(--red)' : 'var(--silver)' ?>; font-weight: 600;">⛔ не найден</span>
+							<?php endif; ?>
+							<?php if (($res['meta']['marker'] ?? '') === 'fallback_xpath'): ?>
+							<div style="color: #ffc107; font-size: 0.7rem;">через fallback XPath</div>
+							<?php endif; ?>
+						</td>
+						<td style="padding: 0.4rem 0.6rem; max-width: 340px; word-break: break-word;">
+							<?= $textPreview !== '' ? htmlspecialchars($textPreview, ENT_QUOTES, 'UTF-8') : '<em style="color: var(--silver);">—</em>' ?>
+						</td>
+					</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<div style="color: var(--silver); font-size: 0.7rem; margin-top: 0.5rem;">
+				* — обязательный блок. Настройки: config/import-parser.php → секция «blocks».
+			</div>
+		</div>
+
+		<?php if (!empty($parsed['warnings'])): ?>
+		<div style="background: rgba(255, 193, 7, 0.1); border: 1px solid #ffc107; padding: 1rem; border-radius: 6px; margin-bottom: 2rem;">
+			<div style="color: #ffc107; font-size: 0.875rem; margin-bottom: 0.5rem; font-weight: 600;">Предупреждения парсера:</div>
+			<ul style="color: var(--text-primary); font-size: 0.875rem; margin-left: 1.5rem;">
+				<?php foreach ($parsed['warnings'] as $warning): ?>
+				<li style="margin-bottom: 0.25rem;"><?= htmlspecialchars($warning, ENT_QUOTES, 'UTF-8') ?></li>
+				<?php endforeach; ?>
+			</ul>
+		</div>
+		<?php endif; ?>
+
+        <div class="form-actions">
+            <a href="/admin/import" class="btn btn-secondary">← Отмена</a>
+            <?php if (!$existing): ?>
+            <form method="POST" action="/admin/import/confirm" style="display: inline;">
+                <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                <button type="submit" class="btn btn-primary">✅ Подтвердить импорт</button>
+            </form>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+<?php $__template->endSection('content'); ?>

@@ -1,0 +1,41 @@
+# Requires Apache 2.4.8+, mod_rewrite, and mod_authz_core.
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Permit only ACME HTTP-01 challenge files among dot-directories.
+    RewriteRule ^\.well-known/acme-challenge/[A-Za-z0-9_-]+$ - [END]
+
+    # Never expose hidden files or private project directories.
+    RewriteRule (^|/)\. - [F,END]
+    RewriteRule ^(?:core|vendor|storage|logs|views|\.git|\.osp)(?:/|$) - [F,END,NC]
+
+    # Hide local configuration, project metadata, diagnostics, and runtime data.
+    RewriteRule ^(?:config\.env(?:\..*)?|composer\.(?:json|lock)$|readme\.(?:md|txt)$|анализ\.txt)$ - [F,END,NC]
+    RewriteRule \.(?:sqlite3?|db|log|sql|bak|old|cmd|ini|conf)$ - [F,END,NC]
+
+    # index.php is the only directly executable PHP entry point.
+    RewriteRule ^(?!index\.php$).*\.php$ - [F,END,NC]
+
+    # Existing public assets may be served directly; all other paths use the router.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [END,QSA]
+</IfModule>
+
+# Keep sensitive files protected even if a rewrite rule is later changed.
+<FilesMatch "(?i)^(?:config\.env(?:\..*)?|composer\.(?:json|lock)$|readme\.(?:md|txt)$|анализ\.txt|.*\.(?:sqlite3?|db|log|sql|bak|old|cmd|ini|conf)$)">
+    Require all denied
+</FilesMatch>
+
+# Prevent direct execution of scripts outside the front controller.
+<FilesMatch "(?i)^(?!index\.php$).+\.php$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header unset X-Powered-By
+    Header always unset X-Powered-By
+</IfModule>

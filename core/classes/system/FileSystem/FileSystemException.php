@@ -1,0 +1,58 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * VampqweEngineMedium — проприетарный PHP-движок
+ *
+ * @copyright  Copyright (c) 2024-2026. Все права защищены.
+ * @author     [Дедюля Александр Иванович / VampqweEngine]
+ * @license    Proprietary
+ * @link       https://github.com/Vampqwe/VampqweEngine.git
+ * @contact      Указывается в LICENSE-файле дистрибутива
+ *
+ * Данный код является интеллектуальной собственностью автора.
+ * Любое копирование, распространение, модификация или использование
+ * без письменного разрешения правообладателя строго запрещено.
+ *
+ * This software is proprietary and confidential.
+ * Unauthorized copying, distribution, or use is strictly prohibited.
+ */
+
+
+namespace Core\System\FileSystem;
+
+use RuntimeException;
+
+/**
+ * Исключение для всех операций файловой системы
+ */
+class FileSystemException extends RuntimeException
+{
+    public static function notFound(string $path): self
+    {
+        return new self("Путь не найден: {$path}");
+    }
+
+    public static function permissionDenied(string $path): self
+    {
+        return new self("Нет прав доступа: {$path}");
+    }
+
+    public static function alreadyExists(string $path): self
+    {
+        return new self("Путь уже существует: {$path}");
+    }
+
+    public static function notWritable(string $path): self
+    {
+        return new self("Путь недоступен для записи: {$path}");
+    }
+
+    public static function maxSizeExceeded(int $size, int $max): self
+    {
+        return new self(
+            "Превышен максимальный размер: {$size} байт (лимит: {$max} байт)"
+        );
+    }
+}
