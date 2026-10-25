@@ -43,6 +43,7 @@ use Core\Module\Admin\Controllers\ImportController;
 use Core\Module\Admin\Services\HtmlImportParser;
 use Core\Module\Admin\Services\ImportService;
 use Core\Module\Admin\Services\PageImportWriter;
+use Core\Module\Admin\Services\ExportService;
 use Core\Module\Admin\Controllers\MenuController;
 use Core\Module\Admin\Services\MenuAdminService;
 use Core\Module\Admin\Controllers\SchemaController;
@@ -92,12 +93,17 @@ class AdminServiceProvider extends ServiceProvider
         $this->container->singleton(ImportService::class, fn() =>
             new ImportService($db)
         );
+        // Экспорт страниц: generic-выгрузка rows-наборов (зеркало импорта).
+        $this->container->singleton(ExportService::class, fn() =>
+            new ExportService($db)
+        );
         $this->container->singleton(PageImportWriter::class, fn() =>
             new PageImportWriter(
                 $this->container->get(HtmlImportParser::class),
                 $this->container->get(PageService::class),
                 $config,
-                $this->container->get(ImportService::class)
+                $this->container->get(ImportService::class),
+                $db
             )
         );
 
@@ -221,7 +227,7 @@ class AdminServiceProvider extends ServiceProvider
             $container->get(Config::class),
             $container->get(SecurityManager::class),
             null,
-            $container->get(ImportService::class)
+            $container->get(PageImportWriter::class)
         );
 
         $menuController = static fn(): MenuController => new MenuController(

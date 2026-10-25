@@ -20,6 +20,7 @@ declare(strict_types=1);
 namespace Core\Module\Admin\Services;
 
 use Core\System\Config\Config;
+use Core\System\DataBase\DataBase;
 use Core\System\Security\HtmlSanitizer;
 use Core\System\Security\PathResolver;
 
@@ -32,8 +33,10 @@ use Core\System\Security\PathResolver;
  * (синхронный confirm) и воркер очереди — вызывают один и тот же код,
  * поэтому поведение импорта не может разойтись при правках.
  *
- * Контракт: write() НИКОГДА не бросает исключений — ошибки возвращаются
- * в отчёте (consumers решают, показывать ли flash или уведомление).
+ * Контракт: write() бросает исключения только при критическом сбое записи
+ * страницы (транзакция откатывается целиком — «полупрошлимованной» страницы
+ * в БД оставаться не должно); ошибки отдельных блоков-строк возвращаются в
+ * отчёте (потребители решают, показывать ли flash или уведомление).
  * Валидация slug «уже существует» остаётся у потребителей (разные UX).
  */
 class PageImportWriter
@@ -42,12 +45,18 @@ class PageImportWriter
         private HtmlImportParser $parser,
         private PageService $pageService,
         private Config $config,
-        private ?ImportService $importService = null
+        private ?ImportService $importService = null,
+        private ?DataBase $db = null
     ) {
     }
 
     /**
      * Записать импортированную страницу и все сконфигурированные блоки.
+     *
+     * Все SQL-шаги (pages + rows-наборы) выполняются в одной транзакции:
+     * сбой на любом из них откатывает предыдущие, импорт не оставляет
+     * частичного состояния. Запись стилей — вне транзакции (файловая
+     * операция), её неуспех возвращается как styles_ok=false.
      *
      * @param array<string,mixed> $parsed результат HtmlImportParser::parse()
      * @return array{
@@ -60,11 +69,35 @@ class PageImportWriter
     public function write(array $parsed): array
     {
         $warnings = [];
+        $rowReports = [];
 
         $record = $this->buildPageRecord($parsed);
-        $pageId = $this->pageService->createPage($record);
 
-        $rowReports = $this->writeRowSets($parsed, $pageId, $warnings);
+        if ($this->db !== null) {
+            // Транзакция атомарна только при InnoDB; для MyISAM откат не
+            // покрывает INSERT — фиксируем движок таблиц pages/schema_org.
+            $this->assertTransactionalEngines();
+
+            // rows-наборы пишутся в той же транзакции, что и страница:
+            // сбой любого SQL-шага откатывает предыдущие. Предупреждения
+            // блоков возвращаются через ArrayObject (callback не может
+            // вернуть несколько значений).
+            $out = new \ArrayObject(['warnings' => [], 'row_reports' => []]);
+            $pageId = (int) $this->db->transaction(function () use ($record, $parsed, $out): int {
+                $pid = $this->pageService->createPage($record);
+                $warnings = [];
+                $out['row_reports'] = $this->writeRowSets($parsed, $pid, $warnings);
+                $out['warnings'] = $warnings;
+
+                return $pid;
+            });
+            $warnings = (array) $out['warnings'];
+            $rowReports = (array) $out['row_reports'];
+        } else {
+            // Fallback без БД (тестовые двойники PageService): прежнее поведение
+            $pageId = $this->pageService->createPage($record);
+            $rowReports = $this->writeRowSets($parsed, $pageId, $warnings);
+        }
 
         $stylesOk = true;
         if (!empty($parsed['styles'])) {
@@ -77,6 +110,36 @@ class PageImportWriter
             'warnings' => $warnings,
             'styles_ok' => $stylesOk,
         ];
+    }
+
+    /**
+     * Транзакция импорта атомарна только при транзакционном движке таблиц.
+     * Для MySQL/MariaDB это InnoDB: на MyISAM rollBack() не отменяет уже
+     * выполненные INSERT, и сбой rows-блока оставил бы «полусторенную»
+     * страницу. Проверяем ENGINE целевых таблиц один раз перед записью.
+     */
+    private function assertTransactionalEngines(): void
+    {
+        $tables = ['pages'];
+        foreach ($this->parser->getBlockTargets() as $target) {
+            if (($target['mode'] ?? 'column') === 'rows') {
+                $tables[] = (string) ($target['table'] ?? '');
+            }
+        }
+
+        foreach (array_unique(array_filter($tables)) as $table) {
+            $row = $this->db?->fetchOne(
+                "SELECT ENGINE AS e FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+                [$table]
+            );
+            $engine = strtolower((string) ($row['e'] ?? ''));
+            if ($engine !== '' && $engine !== 'innodb') {
+                throw new \RuntimeException(
+                    "Импорт требует транзакционного движка: таблица {$table} использует {$engine} (нужен InnoDB)."
+                );
+            }
+        }
     }
 
     /**

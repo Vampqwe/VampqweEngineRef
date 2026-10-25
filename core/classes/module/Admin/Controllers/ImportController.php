@@ -27,7 +27,9 @@ use Core\Module\Admin\Services\ImportService;
 use Core\Module\Page\PageService;
 use Core\Module\Admin\Services\AdminService;
 use Core\Module\Admin\Services\PageImportWriter;
+use Core\System\Application\Application;
 use Core\System\Config\Config;
+use Core\System\DataBase\DataBase;
 use Core\System\Http\Request;
 use Core\System\Http\Response;
 use Core\System\Security\SecurityManager;
@@ -55,7 +57,7 @@ class ImportController
         Config $config,
         private SecurityManager $security,
         ?SessionManager $session = null,
-        ?ImportService $importService = null
+        ?PageImportWriter $writer = null
     ) {
         $this->parser = $parser;
         $this->pageService = $pageService;
@@ -65,7 +67,31 @@ class ImportController
         $this->session = $session ?? new SessionManager($config);
         // Единая точка записи импорта — тот же код, что использует воркер
         // очереди (ImportJobHandler), поэтому поведение sync/async не расходится.
-        $this->writer = new PageImportWriter($parser, $pageService, $config, $importService);
+        // В веб-контексте провайдер передаёт готовый синглтон из DI; при его
+        // отсутствии собираем writer напрямую (обратная совместимость).
+        $this->writer = $writer ?? new PageImportWriter(
+            $parser,
+            $pageService,
+            $config,
+            $this->resolveImportService()
+        );
+    }
+
+    /**
+     * ImportService для fallback-сборки writer: из DI-контейнера приложения,
+     * иначе — напрямую через новое соединение БД (только если контейнер не инициализирован).
+     */
+    private function resolveImportService(): ?ImportService
+    {
+        try {
+            return Application::getInstance()->getContainer()->get(ImportService::class);
+        } catch (\Throwable) {
+            try {
+                return new ImportService(new DataBase($this->config));
+            } catch (\Throwable) {
+                return null; // прежний резервный путь без ImportService
+            }
+        }
     }
 
     public function index(Request $request): Response

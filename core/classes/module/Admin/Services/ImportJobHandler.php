@@ -115,16 +115,42 @@ class ImportJobHandler
     }
 
     /**
-     * Разрешить парсер импорта: через DI-контейнер приложения, если оно
-     * инициализировано (веб-контекст), иначе — напрямую (CLI-воркер).
+     * Разрешить синглтон из DI-контейнера приложения, если оно
+     * инициализировано (веб-контекст), иначе — создать напрямую
+     * (CLI-воркер). Единый резолвер для всех сервисов импорта.
+     */
+    private static function resolveFromContainer(string $class, callable $factory)
+    {
+        try {
+            return Application::getInstance()->getContainer()->get($class);
+        } catch (\Throwable) {
+            return $factory();
+        }
+    }
+
+    /**
+     * Разрешить парсер импорта (DI или прямое создание в CLI).
      */
     private static function resolveParser(Config $config): HtmlImportParser
     {
-        try {
-            return Application::getInstance()->getContainer()->get(HtmlImportParser::class);
-        } catch (\Throwable) {
-            return new HtmlImportParser($config);
-        }
+        /** @var HtmlImportParser */
+        return self::resolveFromContainer(
+            HtmlImportParser::class,
+            static fn(): HtmlImportParser => new HtmlImportParser($config)
+        );
+    }
+
+    /**
+     * Разрешить сервис записи страниц (тот же DataBase, что уже создан
+     * для проверки slug — единое соединение на обработку job'а).
+     */
+    private static function resolvePageService(DataBase $db): PageService
+    {
+        /** @var PageService */
+        return self::resolveFromContainer(
+            PageService::class,
+            static fn(): PageService => new PageService($db)
+        );
     }
 
     /**
@@ -157,7 +183,7 @@ class ImportJobHandler
 
             $parsed = $parser->parse($html);
 
-            $pageService = new PageService($db);
+            $pageService = self::resolvePageService($db);
             if ($pageService->pageExistsBySlug((string) $parsed['slug'])) {
                 throw new \RuntimeException(
                     'Страница с slug «' . $parsed['slug'] . '» уже существует.'
@@ -167,12 +193,17 @@ class ImportJobHandler
             // Единая точка записи импорта (та же логика, что в
             // ImportController::confirm() — сборка записи pages, колоночные
             // блоки config/import-parser.php, rows-наборы schema_org и др.,
-            // запись neutral-style.css). Ошибки блоков возвращаются в отчёте.
+            // запись neutral-style.css). Все SQL-шаги — в транзакции;
+            // ошибки блоков возвращаются в отчёте.
             $writer = new PageImportWriter(
                 $parser,
                 $pageService,
                 $this->config,
-                new ImportService($db)
+                self::resolveFromContainer(
+                    ImportService::class,
+                    static fn(): ImportService => new ImportService($db)
+                ),
+                $db
             );
             $report = $writer->write($parsed);
 
