@@ -53,6 +53,9 @@ class Template
     /** @var string|null Имя layout, который нужно применить после рендера */
     private ?string $pendingLayout = null;
 
+    /** @var string|null Кэш режима вывода контента (config/page-content.php) */
+    private ?string $contentMode = null;
+
     public function __construct(Config $config, ?string $cspNonce = null)
     {
         $this->config = $config;
@@ -188,6 +191,19 @@ class Template
             return '';
         }
 
+        $mode = $this->getContentMode();
+
+        // Режим 'passthrough': ПРЯМОЙ вывод контента без какой-либо обработки —
+        // ни DOM-парсинга, ни санитизации, ни перестройки атрибутов. Контент
+        // уходит в браузер байт-в-байт так, как лежит в БД. Нужен для
+        // самодостатичных страниц с инлайновыми <style>/<svg>/data:-URI —
+        // DOMDocument их портит (квадраты/стрелки/кресты вместо иконок), а
+        // строгий CSP без nonce-перестройки блокирует их оформление.
+        // Разрешает stored-XSS по определению — только доверенное окружение.
+        if ($mode === 'passthrough') {
+            return $content;
+        }
+
         // Defense-in-depth: контент из БД может быть сохранён в режиме
         // content_mode='raw' (или до появления санитизации) — прогоняем
         // через HtmlSanitizer перед выводом посетителям. Правила —
@@ -196,12 +212,6 @@ class Template
         // Исключение: 'raw' — политика «контент хранится и выводится как есть»
         // (согласованно с записью: PagesController/ImportController при 'raw'
         // не санитизируют). Sanitize на выводе молча ломала побитный импорт.
-        $modeFile = \Core\System\Security\PathResolver::resolveConfigFile('page-content.php');
-        $mode = 'sanitize';
-        if (is_file($modeFile)) {
-            $modeCfg = (array) require $modeFile;
-            $mode = (string) ($modeCfg['content_mode'] ?? 'sanitize');
-        }
         if ($mode !== 'raw') {
             $content = \Core\System\Security\HtmlSanitizer::clean($content);
         }
@@ -250,6 +260,41 @@ class Template
             libxml_clear_errors();
             libxml_use_internal_errors($previousLibxmlMode);
         }
+    }
+
+    /**
+     * Режим вывода контента страниц: 'content_output_mode' из
+     * config/page-content.php с fallback на 'content_mode' (обратная
+     * совместимость) и значением по умолчанию 'sanitize'.
+     *
+     *  - 'sanitize'    : HtmlSanitizer + DOM-нормализация с nonce (безопасно);
+     *  - 'raw'         : без санитизации, но с nonce-обработкой через DOM;
+     *  - 'passthrough' : прямой вывод байт-в-байт, без DOM и санитизации.
+     */
+    public function getContentMode(): string
+    {
+        // Кэш на экземпляре: разные Template (разные nonce/контексты) не
+        // наследуют режим друг друга, но в рамках запроса конфиг читается один раз.
+        if ($this->contentMode !== null) {
+            return $this->contentMode;
+        }
+
+        $mode = 'sanitize';
+        try {
+            $modeFile = \Core\System\Security\PathResolver::resolveConfigFile('page-content.php');
+            if (is_file($modeFile)) {
+                $modeCfg = (array) require $modeFile;
+                $mode = (string) ($modeCfg['content_output_mode']
+                    ?? $modeCfg['content_mode']
+                    ?? 'sanitize');
+            }
+        } catch (\Throwable) {
+            // Конфиг недоступен (например, корень проекта ещё не детектирован)
+            // — консервативный безопасный режим.
+            $mode = 'sanitize';
+        }
+
+        return $this->contentMode = $mode;
     }
 
     /**
