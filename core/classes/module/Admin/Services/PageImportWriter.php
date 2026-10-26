@@ -56,8 +56,11 @@ class PageImportWriter
      *
      * Все SQL-шаги (pages + rows-наборы) выполняются в одной транзакции:
      * сбой на любом из них откатывает предыдущие, импорт не оставляет
-     * частичного состояния. Запись стилей — вне транзакции (файловая
-     * операция), её неуспех возвращается как styles_ok=false.
+     * частичного состояния.
+     *
+     * ⚠️ МЕХАНИКА КОПИРОВАНИЯ СТИЛЕЙ ИЗ СТРАНИЦ ПРИ ИМПОРТЕ УДАЛЕНА:
+     * импорт не пишет ни neutral-style.css, ни per-page CSS-файлы — стили
+     * остаются внутри контента страницы как есть.
      *
      * @param array<string,mixed> $parsed результат HtmlImportParser::parse()
      * @return array{
@@ -111,16 +114,11 @@ class PageImportWriter
             $rowReports = $this->writeRowSets($parsed, $pageId, $warnings);
         }
 
-        $stylesOk = true;
-        if (!empty($parsed['styles'])) {
-            $stylesOk = $this->parser->commitStyles((string) $parsed['styles']);
-        }
-
         return [
             'page_id' => $pageId,
             'row_reports' => $rowReports,
             'warnings' => $warnings,
-            'styles_ok' => $stylesOk,
+            'styles_ok' => true,
         ];
     }
 

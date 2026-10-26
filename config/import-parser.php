@@ -23,8 +23,12 @@ return [
     // Подкаталог storage для загруженных файлов импорта.
     'upload_dir' => 'uploads/import',
 
-    // Файл промежуточных стилей в storage (относительный путь).
-    'styles_file' => 'neutral-style.css',
+    // ⚠️ МЕХАНИКА КОПИРОВАНИЯ СТИЛЕЙ ИЗ СТРАНИЦ ПРИ ИМПОРТЕ УДАЛЕНА:
+    // импорт не извлекает <style> из HTML, не вырезает их из контента и
+    // НЕ создаёт никаких CSS-файлов (ни общий neutral-style.css, ни
+    // per-page page-styles/*.css). Стили страницы живут там же, где были
+    // задуманы — в контенте страницы и в её собственных подключённых
+    // стилях (meta/layouts). Ключи 'styles_file'/'styles_mode' упразднены.
 
     // Максимум редиректов при скачивании изображений.
     'image_max_redirects' => 3,
@@ -80,7 +84,6 @@ return [
      *  - 'fallback_xpath': (marker) если маркеры не найдены — взять узел по XPath.
      *  - 'required'     : true — отсутствие содержимого блока = ошибка импорта.
      *  - 'strip_wrapper': (marker/xpath) снимать ли служебную обёртку <!DOCTYPE/html/head/body>.
-     *  - 'collect_styles': (marker/xpath) уносить ли <style> из блока в neutral-style.css.
      *  - 'download_images': (marker/xpath) скачивать ли внешние <img> из блока.
      *  - 'target'       : куда писать:
      *        ['table' => 'pages', 'column' => 'content']            — обычная колонка;

@@ -57,8 +57,6 @@ class HtmlParser extends AbstractParser
     /** @var array<string,string> Схемы JSON-LD 'raw' => нормализованная запись */
     private array $schemaRecords = [];
 
-    private string $extractedStyles = '';
-
     public function __construct(array $rules = [])
     {
         parent::__construct($rules);
@@ -90,17 +88,16 @@ class HtmlParser extends AbstractParser
         $this->foundImages = [];
         $this->seenImages = [];
         $this->schemaRecords = [];
-        $this->extractedStyles = '';
 
         $sourceHtml = $this->normalizeInput($content);
 
         $doc = $this->loadHtml($sourceHtml);
         $xpath = new DOMXPath($doc);
 
-        // Глобальные <style> всего документа собираются до извлечения блоков;
-        // разметка и классы остаются без изменений.
-        $this->collectStyles($xpath);
-        $this->removeStyleTags($doc, $xpath);
+        // ⚠️ МЕХАНИКА КОПИРОВАНИЯ СТИЛЕЙ ИЗ СТРАНИЦ ПРИ ИМПОРТЕ УДАЛЕНА:
+        // теги <style> больше НЕ извлекаются из HTML и НЕ вырезаются из
+        // контента. Страница сохраняется ровно с теми стилями, которые в
+        // ней есть (per-page стили подключаются через meta/layouts страницы).
 
         $blockResults = [];   // имя блока => ['value'|'rows', 'found', 'meta']
         $values = [];         // колонка => скалярное значение для pages
@@ -221,9 +218,12 @@ class HtmlParser extends AbstractParser
             'content' => (string) ($values['content'] ?? ''),
             'schemas' => $schemas,
             'scripts' => $scripts,
-            'styles' => $this->extractedStyles,
+            // ⚠️ Механика копирования стилей из страниц при импорте УДАЛЕНА:
+            // <style> остаются в контенте страницы как есть; ключи 'styles'
+            // и 'styles_extracted' сохранены только для совместности контракта.
+            'styles' => '',
             'images_count' => count($this->foundImages),
-            'styles_extracted' => strlen($this->extractedStyles),
+            'styles_extracted' => 0,
             'downloaded_images' => $this->foundImages,
             'warnings' => $this->warnings,
             'blocks' => $blockResults,
@@ -848,10 +848,8 @@ class HtmlParser extends AbstractParser
 
         $fragXp = new DOMXPath($fragDoc);
 
-        if (!empty($block['collect_styles'])) {
-            $this->collectStyles($fragXp);
-            $this->removeStyleTags($fragDoc, $fragXp);
-        }
+        // ⚠️ Сбор/вырезание <style> из блока УДАЛЕН: контент страницы
+        // сохраняется со своими стилями как есть.
 
         $html = $this->extractInnerBody($fragDoc);
 
@@ -884,9 +882,6 @@ class HtmlParser extends AbstractParser
             $this->addWarning("Блок «{$name}»: маркеры и fallback-узлы не найдены");
             return null;
         }
-
-        $this->collectStyles($xp);
-        $this->removeStyleTags($doc, $xp);
 
         $html = '';
         foreach ($nodes as $node) {
@@ -1101,39 +1096,6 @@ class HtmlParser extends AbstractParser
         }
 
         return '';
-    }
-
-    /**
-     * Собирает CSS из тегов <style> в памяти (без записи на диск).
-     */
-    protected function collectStyles(DOMXPath $xpath): void
-    {
-        $nodes = $xpath->query('//style');
-        if ($nodes->length === 0) {
-            return;
-        }
-
-        foreach ($nodes as $node) {
-            $css = trim($node->textContent);
-            if ($css !== '') {
-                $this->extractedStyles .= $css . "\n";
-            }
-        }
-    }
-
-    /**
-     * Удаляет теги <style> из DOM. Классы и остальной HTML не трогаются.
-     */
-    protected function removeStyleTags(DOMDocument $doc, DOMXPath $xpath): void
-    {
-        $nodes = $xpath->query('//style');
-        $list = [];
-        foreach ($nodes as $node) {
-            $list[] = $node;
-        }
-        foreach ($list as $node) {
-            $node->parentNode?->removeChild($node);
-        }
     }
 
     /**
