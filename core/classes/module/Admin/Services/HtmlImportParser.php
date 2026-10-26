@@ -50,8 +50,14 @@ class HtmlImportParser extends HtmlParser
     /** Каталог загрузки картинок импорта (абсолютный путь) */
     private string $uploadDir;
 
-    /** Файл промежуточных стилей импорта (абсолютный путь) */
+    /** Файл промежуточных стилей импорта (абсолютный путь, режим 'shared') */
     private string $stylesFile;
+
+    /** Каталог постстраничных стилей (абсолютный путь, режим 'per_page') */
+    private string $pageStylesDir;
+
+    /** Режим хранения извлечённых стилей: 'per_page' | 'shared' */
+    private string $stylesMode;
 
     public function __construct(Config $config)
     {
@@ -68,6 +74,61 @@ class HtmlImportParser extends HtmlParser
             . trim((string) ($this->rules['upload_dir'] ?? 'uploads/import'), '/\\');
         $this->stylesFile = $storage . DIRECTORY_SEPARATOR
             . ltrim((string) ($this->rules['styles_file'] ?? 'neutral-style.css'), '/\\');
+        $this->pageStylesDir = $storage . DIRECTORY_SEPARATOR
+            . trim((string) ($this->rules['page_styles_dir'] ?? 'page-styles'), '/\\');
+        $this->stylesMode = ($this->rules['styles_mode'] ?? 'per_page') === 'shared'
+            ? 'shared'
+            : 'per_page';
+    }
+
+    /**
+     * Активный режим хранения стилей ('per_page' по умолчанию).
+     */
+    public function getStylesMode(): string
+    {
+        return $this->stylesMode;
+    }
+
+    /**
+     * Записать извлечённый CSS страницы в ЕЁ СОБСТВЕННЫЙ файл
+     * storage/page-styles/<slug>.css (пер-страничное хранение).
+     *
+     * В отличие от commitStyles() (легаси-режим 'shared', где все страницы
+     * сливаются в один neutral-style.css и одинаковые селекторы замещают
+     * друг друга), здесь CSS каждой страницы изолирован: байт-в-байт, без
+     * парсинга правил — сохраняются @media, :root, псевдоклассы и порядок.
+     * Файл перезаписывается целиком (идемпотентный повторный импорт).
+     *
+     * @param string $slug slug страницы (санитизируется внутри)
+     * @return string|null относительный веб-путь (/storage/page-styles/x.css)
+     *                     или null при ошибке записи / пустом CSS
+     */
+    public function commitPageStyles(string $slug, string $css): ?string
+    {
+        $css = trim($css);
+        if ($css === '') {
+            return null;
+        }
+
+        $safe = preg_replace('/[^a-z0-9_-]/', '-', strtolower(trim($slug))) ?? '';
+        $safe = trim($safe, '-');
+        if ($safe === '' || strlen($safe) > 190) {
+            // Непригодный slug — не пишем файл во избежание коллизий/трaversal
+            return null;
+        }
+
+        if (!is_dir($this->pageStylesDir) && !@mkdir($this->pageStylesDir, 0775, true) && !is_dir($this->pageStylesDir)) {
+            return null;
+        }
+
+        $file = $this->pageStylesDir . DIRECTORY_SEPARATOR . $safe . '.css';
+        $written = file_put_contents(
+            $file,
+            "/* Стили страницы «{$safe}», извлечены импортом (" . date('Y-m-d H:i:s') . ") */\n" . $css . "\n",
+            LOCK_EX
+        );
+
+        return $written === false ? null : '/storage/page-styles/' . $safe . '.css';
     }
 
     /**
