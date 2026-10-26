@@ -200,8 +200,16 @@ class Template
         // DOMDocument их портит (квадраты/стрелки/кресты вместо иконок), а
         // строгий CSP без nonce-перестройки блокирует их оформление.
         // Разрешает stored-XSS по определению — только доверенное окружение.
+        //
+        // Единственная правка: инлайн-скрипты импортированных шаблонов
+        // (аккордеоны FAQ, счётчики и т.п.) не имеют атрибута nonce, а
+        // строгий CSP ('script-src ... nonce-...') молча блокирует их
+        // выполнение — страница выглядит «поломанной» при целом контенте
+        // в БД. Атрибут nonce добавляется строковой заменой БЕЗ DOM-
+        // нормализации, поэтому побитность остального HTML сохраняется
+        // (атрибут вставляется перед '>' открывающего тега, см. тест).
         if ($mode === 'passthrough') {
-            return $content;
+            return $this->nonceInlineScripts($content);
         }
 
         // Defense-in-depth: контент из БД может быть сохранён в режиме
@@ -260,6 +268,38 @@ class Template
             libxml_clear_errors();
             libxml_use_internal_errors($previousLibxmlMode);
         }
+    }
+
+    /**
+     * Добавить CSP-nonce инлайн-скриптам в HTML БЕЗ DOM-нормализации.
+     *
+     * Работает строковой заменой: для каждого открывающего <script>-тега
+     * без атрибута src и без уже выставленного nonce/hash вставляется
+     * nonce="..." перед закрывающим '>'. Всё остальное содержимое
+     * (текст скриптов, разметка, пробелы) остаётся байт-в-байт.
+     * Инлайновые <style> не трогаются — для них настроен
+     * style-src/style-src-attr 'unsafe-inline'.
+     */
+    private function nonceInlineScripts(string $html): string
+    {
+        $nonce = htmlspecialchars($this->cspNonce, ENT_QUOTES, 'UTF-8');
+
+        return preg_replace_callback(
+            '/<script\b([^>]*)>/i',
+            static function (array $m) use ($nonce): string {
+                $attrs = $m[1];
+                // Внешние скрипты (src=) живут под 'self'/домены — nonce не нужен.
+                if (preg_match('/\bsrc\s*=/i', $attrs)) {
+                    return $m[0];
+                }
+                // Уже есть nonce или hash — не дублируем.
+                if (preg_match('/\b(nonce|integrity)\s*=/i', $attrs)) {
+                    return $m[0];
+                }
+                return '<script' . $attrs . ' nonce="' . $nonce . '">';
+            },
+            $html
+        ) ?? $html;
     }
 
     /**
