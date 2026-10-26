@@ -130,13 +130,18 @@ class ImportJobHandler
 
     /**
      * Разрешить парсер импорта (DI или прямое создание в CLI).
+     *
+     * В CLI-контексте создаётся TemplateAwareImportParser — тот же класс,
+     * что регистрируется в DI (AdminServiceProvider), иначе фоновый импорт
+     * «голых» HTML-файлов расходится с веб-импортом: базовый парсер не
+     * находит маркеры main_content и побитный raw-срез не формируется.
      */
     private static function resolveParser(Config $config): HtmlImportParser
     {
         /** @var HtmlImportParser */
         return self::resolveFromContainer(
             HtmlImportParser::class,
-            static fn(): HtmlImportParser => new HtmlImportParser($config)
+            static fn(): HtmlImportParser => new TemplateAwareImportParser($config)
         );
     }
 

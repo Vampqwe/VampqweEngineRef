@@ -41,6 +41,7 @@ use Core\Module\Admin\Services\PageService;
 use Core\System\Security\HtmlSanitizer;
 use Core\Module\Admin\Controllers\ImportController;
 use Core\Module\Admin\Services\HtmlImportParser;
+use Core\Module\Admin\Services\TemplateAwareImportParser;
 use Core\Module\Admin\Services\ImportService;
 use Core\Module\Admin\Services\PageImportWriter;
 use Core\Module\Admin\Services\BatchImportService;
@@ -85,8 +86,16 @@ class AdminServiceProvider extends ServiceProvider
 
         $this->container->singleton(HtmlSanitizer::class, fn() => new HtmlSanitizer());
 
+        // Парсер импорта: TemplateAwareImportParser — наследник HtmlImportParser
+        // с автоопределением «голого шаблона» (файлы без контентных маркеров
+        // движка). Без него пакетный импорт таких файлов ломает контент:
+        // базовый парсер не находит маркеры main_content, побитный raw-срез
+        // не формируется и в БД уходит DOM-нормализованный вариант.
+        // Ключ DI остаётся HtmlImportParser::class — все потребители
+        // (BatchImportService, PageImportWriter, ImportController, воркер)
+        // резолвят именно его и получают совместимый по типу экземпляр.
         $this->container->singleton(HtmlImportParser::class, fn() =>
-            new HtmlImportParser($config)
+            new TemplateAwareImportParser($config)
         );
 
         // Импорт страниц: generic-запись блоков в БД и единая точка записи
