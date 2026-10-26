@@ -395,15 +395,33 @@ final class HtmlImportParserTest extends TestCase
         self::assertStringContainsString('Меню', $texts['nav']);
     }
 
-    public function testStylesCollectedButNotWrittenOnParse(): void
+    public function testStylesNeverCopiedOnParse(): void
     {
-        $html = '<html><head><style>.x{color:red}</style></head><body><p class="x">т</p></body></html>';
-        $parser = new HtmlImportParser(Config::getInstance());
+        $html = '<html><head><style>.x{color:red}</style></head><body>'
+            . '<---main_content---><p class="x">т</p><---end main_content---></body></html>';
+
+        $parser = $this->makeParserWithBlocks([]);
+        $rules = $parser->getRules();
+        $rules['blocks'] = [
+            'content' => [
+                'type'   => 'marker',
+                'start'  => '<---main_content--->',
+                'end'    => '<---end main_content--->',
+                'mode'   => 'raw',
+                'target' => ['table' => 'pages', 'column' => 'content'],
+            ],
+        ];
+        $parser->setRules($rules);
 
         $parsed = $parser->parse($html);
 
-        self::assertStringContainsString('.x{color:red}', (string) $parsed['styles']);
-        // На этапе разбора файл стилей НЕ создаётся — только после commitStyles()
+        // Механика копирования стилей из страниц при импорте УДАЛЕНА:
+        // ключ 'styles' всегда пуст, <style> не вырезаются из контента.
+        self::assertSame('', (string) $parsed['styles']);
+        self::assertSame(0, $parsed['styles_extracted']);
+        // <style> остаются в самом контенте страницы байт-в-байт.
+        self::assertStringContainsString('.x{color:red}', (string) $parsed['content']);
+        // Никаких файлов стилей импорт не создаёт.
         self::assertFileDoesNotExist($this->tmpRoot . '/storage/neutral-style.css');
     }
 }
