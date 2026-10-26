@@ -51,16 +51,16 @@ class PageImportWriter
     ) {
     }
 
-    /** Кэш наличия колонки pages.page_styles_url (null — ещё не проверяли) */
-    private ?bool $pageStylesColumn = null;
-
     /**
      * Записать импортированную страницу и все сконфигурированные блоки.
      *
      * Все SQL-шаги (pages + rows-наборы) выполняются в одной транзакции:
      * сбой на любом из них откатывает предыдущие, импорт не оставляет
-     * частичного состояния. Запись стилей — вне транзакции (файловая
-     * операция), её неуспех возвращается как styles_ok=false.
+     * частичного состояния.
+     *
+     * ⚠️ МЕХАНИКА КОПИРОВАНИЯ СТИЛЕЙ ИЗ СТРАНИЦ ПРИ ИМПОРТЕ УДАЛЕНА:
+     * импорт не пишет ни neutral-style.css, ни per-page CSS-файлы — стили
+     * остаются внутри контента страницы как есть.
      *
      * @param array<string,mixed> $parsed результат HtmlImportParser::parse()
      * @return array{
@@ -114,81 +114,12 @@ class PageImportWriter
             $rowReports = $this->writeRowSets($parsed, $pageId, $warnings);
         }
 
-        $stylesOk = true;
-        if (!empty($parsed['styles'])) {
-            // Пер-страничное хранение (режим по умолчанию): CSS страницы —
-            // в её собственный файл, страницы не перезаписывают правила друг
-            // друга. Легаси 'shared' — прежний общий neutral-style.css.
-            if ($this->parser->getStylesMode() === 'per_page') {
-                $cssPath = $this->parser->commitPageStyles(
-                    (string) ($record['slug'] ?? ''),
-                    (string) $parsed['styles']
-                );
-                if ($cssPath === null) {
-                    $stylesOk = false;
-                } else {
-                    // Ссылку на стили храним в колонке page_styles_url, если
-                    // она есть в схеме БД (ALTER см. database/structure.sql);
-                    // без колонки — файл остаётся сиротой и подключается по
-                    // slug-соглашению /storage/page-styles/<slug>.css.
-                    if ($this->hasPageStylesColumn()) {
-                        $this->persistPageStylesUrl($pageId, $cssPath);
-                    }
-                }
-            } else {
-                $stylesOk = $this->parser->commitStyles((string) $parsed['styles']);
-            }
-        }
-
         return [
             'page_id' => $pageId,
             'row_reports' => $rowReports,
             'warnings' => $warnings,
-            'styles_ok' => $stylesOk,
+            'styles_ok' => true,
         ];
-    }
-
-    /**
-     * Есть ли в схеме БД колонка pages.page_styles_url (мягкая зависимость:
-     * движок работает и на старой схеме — тогда подключение идёт по slug).
-     */
-    private function hasPageStylesColumn(): bool
-    {
-        if ($this->db === null) {
-            return false;
-        }
-        if ($this->pageStylesColumn !== null) {
-            return $this->pageStylesColumn;
-        }
-        try {
-            $row = $this->db->fetchOne(
-                "SELECT COUNT(*) AS c FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pages'
-                   AND COLUMN_NAME = 'page_styles_url'"
-            );
-            $this->pageStylesColumn = ((int) ($row['c'] ?? 0)) > 0;
-        } catch (\Throwable) {
-            $this->pageStylesColumn = false;
-        }
-        return $this->pageStylesColumn;
-    }
-
-    /**
-     * Сохранить путь к постстраничному CSS (UPDATE отдельным запросом —
-     * вне транзакции создания страницы, чтобы старая схема без колонки
-     * не ломала импорт).
-     */
-    private function persistPageStylesUrl(int $pageId, string $cssPath): void
-    {
-        try {
-            $this->db?->execute(
-                'UPDATE pages SET page_styles_url = :u WHERE id = :id',
-                ['u' => $cssPath, 'id' => $pageId]
-            );
-        } catch (\Throwable) {
-            // Колонка оказалась недоступна — не критично: рендерер умеет
-            // резолвить файл по slug-соглашению.
-        }
     }
 
     /**

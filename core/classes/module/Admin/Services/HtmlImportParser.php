@@ -34,30 +34,21 @@ use RuntimeException;
  *  - подстановку значений окружения ('{APP_NAME}', '{APP_BASE_URL}') и
  *    псевдонимов маркеров ('marker_aliases') прямо в описания блоков;
  *  - валидацию загруженного файла (validateUpload());
- *  - скачивание внешних картинок из контента (processContentImages());
- *  - запись собранных стилей в storage/neutral-style.css (commitStyles()).
+ *  - скачивание внешних картинок из контента (processContentImages()).
  *
- * Сам parse() остаётся свободным от побочных эффектов: файл стилей и
- * картинки пишутся только явными вызовами на этапе подтверждения импорта.
+ * ⚠️ МЕХАНИКА КОПИРОВАНИЯ СТИЛЕЙ ИЗ СТРАНИЦ ПРИ ИМПОРТЕ ПОЛНОСТЬЮ УДАЛЕНА:
+ * импорт не собирает <style>, не пишет neutral-style.css и никакие иные
+ * файлы стилей. Контент страницы сохраняется со своими стилями как есть.
+ *
+ * Сам parse() остаётся свободным от побочных эффектов: картинки пишутся
+ * только явными вызовами на этапе подтверждения импорта.
  */
 class HtmlImportParser extends HtmlParser
 {
     private Config $config;
 
-    /** Каталог storage для загруженных файлов (абсолютный путь) */
-    private string $storageDir;
-
     /** Каталог загрузки картинок импорта (абсолютный путь) */
     private string $uploadDir;
-
-    /** Файл промежуточных стилей импорта (абсолютный путь, режим 'shared') */
-    private string $stylesFile;
-
-    /** Каталог постстраничных стилей (абсолютный путь, режим 'per_page') */
-    private string $pageStylesDir;
-
-    /** Режим хранения извлечённых стилей: 'per_page' | 'shared' */
-    private string $stylesMode;
 
     public function __construct(Config $config)
     {
@@ -69,66 +60,8 @@ class HtmlImportParser extends HtmlParser
         parent::__construct($rules);
 
         $storage = $config->getStoragePath();
-        $this->storageDir = $storage;
         $this->uploadDir = $storage . DIRECTORY_SEPARATOR
             . trim((string) ($this->rules['upload_dir'] ?? 'uploads/import'), '/\\');
-        $this->stylesFile = $storage . DIRECTORY_SEPARATOR
-            . ltrim((string) ($this->rules['styles_file'] ?? 'neutral-style.css'), '/\\');
-        $this->pageStylesDir = $storage . DIRECTORY_SEPARATOR
-            . trim((string) ($this->rules['page_styles_dir'] ?? 'page-styles'), '/\\');
-        $this->stylesMode = ($this->rules['styles_mode'] ?? 'per_page') === 'shared'
-            ? 'shared'
-            : 'per_page';
-    }
-
-    /**
-     * Активный режим хранения стилей ('per_page' по умолчанию).
-     */
-    public function getStylesMode(): string
-    {
-        return $this->stylesMode;
-    }
-
-    /**
-     * Записать извлечённый CSS страницы в ЕЁ СОБСТВЕННЫЙ файл
-     * storage/page-styles/<slug>.css (пер-страничное хранение).
-     *
-     * В отличие от commitStyles() (легаси-режим 'shared', где все страницы
-     * сливаются в один neutral-style.css и одинаковые селекторы замещают
-     * друг друга), здесь CSS каждой страницы изолирован: байт-в-байт, без
-     * парсинга правил — сохраняются @media, :root, псевдоклассы и порядок.
-     * Файл перезаписывается целиком (идемпотентный повторный импорт).
-     *
-     * @param string $slug slug страницы (санитизируется внутри)
-     * @return string|null относительный веб-путь (/storage/page-styles/x.css)
-     *                     или null при ошибке записи / пустом CSS
-     */
-    public function commitPageStyles(string $slug, string $css): ?string
-    {
-        $css = trim($css);
-        if ($css === '') {
-            return null;
-        }
-
-        $safe = preg_replace('/[^a-z0-9_-]/', '-', strtolower(trim($slug))) ?? '';
-        $safe = trim($safe, '-');
-        if ($safe === '' || strlen($safe) > 190) {
-            // Непригодный slug — не пишем файл во избежание коллизий/трaversal
-            return null;
-        }
-
-        if (!is_dir($this->pageStylesDir) && !@mkdir($this->pageStylesDir, 0775, true) && !is_dir($this->pageStylesDir)) {
-            return null;
-        }
-
-        $file = $this->pageStylesDir . DIRECTORY_SEPARATOR . $safe . '.css';
-        $written = file_put_contents(
-            $file,
-            "/* Стили страницы «{$safe}», извлечены импортом (" . date('Y-m-d H:i:s') . ") */\n" . $css . "\n",
-            LOCK_EX
-        );
-
-        return $written === false ? null : '/storage/page-styles/' . $safe . '.css';
     }
 
     /**
@@ -279,69 +212,6 @@ class HtmlImportParser extends HtmlParser
         }
 
         return ['html' => $html, 'images' => $downloaded];
-    }
-
-    /**
-     * Разбивает CSS на карту «селектор => тело правила» (поверхностный
-     * парсер без учёта @media). Используется и здесь (dedupe neutral-style.css),
-     * и MapModule для инлайн-стилей SVG-карты — поэтому метод публичный.
-     */
-    public function parseCssRules(string $css): array
-    {
-        $rules = [];
-        // Убираем комментарии
-        $css = preg_replace('#/\*.*?\*/#s', '', $css) ?? '';
-
-        if (preg_match_all('/([^{}]+)\{([^{}]*)\}/s', $css, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $m) {
-                $selector = preg_replace('/\s+/', ' ', trim($m[1]));
-                $body = trim($m[2]);
-                if ($selector !== '' && $body !== '') {
-                    $rules[$selector] = $body;
-                }
-            }
-        }
-
-        return $rules;
-    }
-
-    /**
-     * Запись извлечённых стилей в промежуточный neutral-style.css с
-     * дедупликацией: повторяющиеся селекторы заменяются новыми значениями.
-     * Вызывается только на этапе confirm (предпросмотр не имеет побочных эффектов).
-     */
-    public function commitStyles(string $css): bool
-    {
-        $css = trim($css);
-        if ($css === '') {
-            return true;
-        }
-
-        if (!is_dir($this->storageDir) && !@mkdir($this->storageDir, 0775, true) && !is_dir($this->storageDir)) {
-            return false;
-        }
-
-        $existingRules = [];
-        if (is_file($this->stylesFile)) {
-            $existingCss = (string) file_get_contents($this->stylesFile);
-            $existingRules = $this->parseCssRules($existingCss);
-        }
-
-        $newRules = $this->parseCssRules($css);
-
-        // Дедупликация: одинаковые селекторы заменяем (последнее значение побеждает),
-        // новые селекторы дописываем в конец
-        $merged = $existingRules;
-        foreach ($newRules as $selector => $body) {
-            $merged[$selector] = $body;
-        }
-
-        $out = "/* neutral-style.css — стили, извлечённые импортом страниц (" . date('Y-m-d H:i:s') . ") */\n\n";
-        foreach ($merged as $selector => $body) {
-            $out .= $selector . " {" . $body . "}\n";
-        }
-
-        return file_put_contents($this->stylesFile, $out, LOCK_EX) !== false;
     }
 
     /**
