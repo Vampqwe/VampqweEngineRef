@@ -117,11 +117,26 @@ class SecurityHeaders
             $name = strtolower(array_shift($parts) ?? '');
 
             if ($name === 'script-src' || $name === 'style-src') {
-                // unsafe-inline не должен разрешать произвольный исполняемый JavaScript
-                // или обходить nonce у style-блоков. style-src-attr настраивается отдельно.
+                // unsafe-inline не должен разрешать произвольный исполняемый JavaScript.
+                // Для style-src: если администратор явно настроил style-src-attr с
+                // 'unsafe-inline' (разрешение инлайн-атрибутов style=""), то же самое
+                // распространяется и на style-src — иначе CSP ломает импортные страницы:
+                // весь их дизайн живёт в атрибутах style="" (см. config.env.example),
+                // а без этой связки браузер отрисовывает «голый» HTML («страница
+                // поломана» при целой, побитно корректной записи в БД).
+                $allowUnsafeInlineForStyle = $name === 'style-src'
+                    && $this->policyHasDirective($directives, 'style-src-attr', "'unsafe-inline'");
+
                 $parts = array_values(array_filter(
                     $parts,
-                    static fn(string $source): bool => $source !== "'unsafe-inline'"
+                    static function (string $source) use ($allowUnsafeInlineForStyle): bool {
+                        if ($source !== "'unsafe-inline'") {
+                            return true;
+                        }
+                        // unsafe-inline не должен разрешать произвольный исполняемый
+                        // JavaScript или обходить nonce у style-блоков.
+                        return $allowUnsafeInlineForStyle;
+                    }
                 ));
 
                 if (!in_array($nonceSource, $parts, true)) {
@@ -143,6 +158,24 @@ class SecurityHeaders
         }
 
         return implode('; ', $directives);
+    }
+
+    /**
+     * Есть ли в наборе директив указанная директива, содержащая источник.
+     *
+     * @param string[] $directives
+     */
+    private function policyHasDirective(array $directives, string $name, string $source): bool
+    {
+        foreach ($directives as $directive) {
+            $parts = preg_split('/\s+/', trim($directive)) ?: [];
+            $directiveName = strtolower((string) array_shift($parts));
+            if ($directiveName === $name && in_array($source, $parts, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
