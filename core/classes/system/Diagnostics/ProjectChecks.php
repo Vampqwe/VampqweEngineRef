@@ -155,10 +155,15 @@ final class ProjectChecks
         }
 
         $nonce = $template->getCspNonce();
-        $trusted = $template->trustedHtml('<h2>Trusted HTML</h2><script>window.previewCheck = true;</script>');
-        if (!str_contains($trusted, '<h2>Trusted HTML</h2>')
-            || !str_contains($trusted, 'nonce="' . $nonce . '"')) {
-            throw new \RuntimeException('Trusted HTML/CSP nonce output failed');
+        // Проверка имеет смысл только в режимах с DOM-обработкой ('sanitize'/'raw').
+        // В 'passthrough' контент выводится байт-в-байт без nonce-перестройки —
+        // там ожидаемо отсутствие nonce, и проверка неприменима.
+        if ($template->getContentMode() !== 'passthrough') {
+            $trusted = $template->trustedHtml('<h2>Trusted HTML</h2><script>window.previewCheck = true;</script>');
+            if (!str_contains($trusted, '<h2>Trusted HTML</h2>')
+                || !str_contains($trusted, 'nonce="' . $nonce . '"')) {
+                throw new \RuntimeException('Trusted HTML/CSP nonce output failed');
+            }
         }
 
         $jsonLd = $template->schemaJson(['name' => '</script><script>blocked</script>']);

@@ -178,7 +178,6 @@ return [
             // Fallback, если маркеры не найдены:
             'fallback_xpath' => '(//main | //article | //[@id="content"])[1]',
             'strip_wrapper'  => true,
-            'collect_styles' => true,
             'download_images' => true,
             'verify_integrity' => true,
             'required' => true,

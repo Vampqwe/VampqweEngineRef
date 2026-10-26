@@ -192,8 +192,8 @@ class ImportJobHandler
 
             // Единая точка записи импорта (та же логика, что в
             // ImportController::confirm() — сборка записи pages, колоночные
-            // блоки config/import-parser.php, rows-наборы schema_org и др.,
-            // запись neutral-style.css). Все SQL-шаги — в транзакции;
+            // блоки config/import-parser.php, rows-наборы schema_org и др.).
+            // Все SQL-шаги — в транзакции;
             // ошибки блоков возвращаются в отчёте.
             $writer = new PageImportWriter(
                 $parser,
