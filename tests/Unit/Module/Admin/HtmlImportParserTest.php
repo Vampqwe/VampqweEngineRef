@@ -463,4 +463,51 @@ final class HtmlImportParserTest extends TestCase
         self::assertStringContainsString('<p>т</p>', (string) $parsed['content']);
         self::assertFileDoesNotExist($this->tmpRoot . '/storage/neutral-style.css');
     }
+
+    public function testRawSliceIsBytePerfectForCrlfSource(): void
+    {
+        // Регрессия CRLF-бага: normalizeInput() приводит \r\n → \n, и раньше
+        // побитный срез снимался с НОРМАЛИЗОВАННОЙ копии — в БД попадали
+        // байты с \n вместо исходных \r\n (файл ≠ подстрока оригинала).
+        // Теперь raw-срез выполняется по оригиналу и обязан быть его точной
+        // подстрокой байт-в-байт.
+        $crlf = "<html>\r\n<head><title>Стр</title></head>\r\n<body>\r\n"
+            . "<!-- ОСНОВНОЙ КОНТЕНТ -->\r\n<nav>Меню</nav>\r\n"
+            . "<main>\r\n  <p>Контент\r\n  второй строки</p>\r\n</main>\r\n"
+            . "<!-- FOOTER -->\r\n<footer>Подвал</footer>\r\n</body>\r\n</html>\r\n";
+
+        $parser = $this->makeParserWithBlocks([]);
+        $rules = $parser->getRules();
+        $rules['content_raw'] = true;
+        $rules['blocks']['main_content'] = [
+            'type'   => 'marker',
+            'start'  => '<!-- ОСНОВНОЙ КОНТЕНТ -->',
+            'end'    => '<!-- FOOTER -->',
+            'target' => ['table' => 'pages', 'column' => 'content'],
+        ];
+        $parser->setRules($rules);
+
+        $parsed = $parser->parse($crlf);
+        $content = (string) $parsed['content'];
+
+        // 1) Срез — точная подстрока ОРИГИНАЛА (побитность восстановлена).
+        self::assertNotFalse(strpos($crlf, $content), 'raw-срез обязан быть подстрокой оригинала');
+        // 2) Переносы \r\n сохранены как есть (не нормализованы до \n).
+        self::assertStringContainsString("\r\n", $content);
+        // 3) Границы маркеров соблюдены: nav/footer вне среза.
+        self::assertStringStartsWith('<!-- ОСНОВНОЙ КОНТЕНТ -->', $content);
+        self::assertStringNotContainsString('<footer>Подвал</footer>', $content);
+        self::assertStringContainsString('<nav>Меню</nav>', $content);
+        // 4) Контент между маркерами включён полностью, байт-в-байт.
+        // Границы: срез = от начала start-маркера до конца end-маркера
+        // (контракт движка: include both markers).
+        $sPos = strpos($crlf, '<!-- ОСНОВНОЙ КОНТЕНТ -->');
+        $ePos = strpos($crlf, '<!-- FOOTER -->');
+        self::assertNotFalse($sPos);
+        self::assertNotFalse($ePos);
+        $expected = substr($crlf, $sPos, $ePos + strlen('<!-- FOOTER -->') - $sPos);
+        self::assertSame($expected, $content);
+        // 5) Маркер блока помечен как raw_slice (writer пропустит санитайзер).
+        self::assertSame('raw_slice', $parsed['blocks']['main_content']['meta']['marker'] ?? '');
+    }
 }
