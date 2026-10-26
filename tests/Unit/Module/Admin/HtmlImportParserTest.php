@@ -397,11 +397,16 @@ final class HtmlImportParserTest extends TestCase
 
     public function testStylesNeverCopiedOnParse(): void
     {
-        $html = '<html><head><style>.x{color:red}</style></head><body>'
-            . '<---main_content---><p class="x">т</p><---end main_content---></body></html>';
+        // Стиль — ВНУТРИ контентного блока (как в реальных страницах page/,
+        // где инлайновые <style> идут в теле). Побитный режим content_raw
+        // обязан сохранить его байт-в-байт.
+        $html = '<html><head><title>Стр</title></head><body>'
+            . '<---main_content---><style>.x{color:red}</style><p class="x">т</p><---end main_content--->'
+            . '</body></html>';
 
         $parser = $this->makeParserWithBlocks([]);
         $rules = $parser->getRules();
+        $rules['content_raw'] = true;
         $rules['blocks'] = [
             'content' => [
                 'type'   => 'marker',
@@ -421,7 +426,41 @@ final class HtmlImportParserTest extends TestCase
         self::assertSame(0, $parsed['styles_extracted']);
         // <style> остаются в самом контенте страницы байт-в-байт.
         self::assertStringContainsString('.x{color:red}', (string) $parsed['content']);
+        self::assertStringContainsString('<style>', (string) $parsed['content']);
         // Никаких файлов стилей импорт не создаёт.
+        self::assertFileDoesNotExist($this->tmpRoot . '/storage/neutral-style.css');
+    }
+
+    public function testHeadStylesAreNotFabricatedIntoContent(): void
+    {
+        // Стили из <head> НЕ переносятся в контент блоками и НЕ копируются
+        // в файлы: механика вырезания удалена целиком. Контент = ровно срез
+        // между маркерами.
+        $html = '<html><head><style>.hd{color:blue}</style><title>Стр</title></head><body>'
+            . '<---main_content---><p>т</p><---end main_content--->'
+            . '</body></html>';
+
+        $parser = $this->makeParserWithBlocks([]);
+        $rules = $parser->getRules();
+        $rules['content_raw'] = true;
+        $rules['blocks'] = [
+            'content' => [
+                'type'   => 'marker',
+                'start'  => '<---main_content--->',
+                'end'    => '<---end main_content--->',
+                'mode'   => 'raw',
+                'target' => ['table' => 'pages', 'column' => 'content'],
+            ],
+        ];
+        $parser->setRules($rules);
+
+        $parsed = $parser->parse($html);
+
+        self::assertSame('', (string) $parsed['styles']);
+        self::assertSame(0, $parsed['styles_extracted']);
+        // head-стиль не «примешивается» к контенту парсером.
+        self::assertStringNotContainsString('.hd{color:blue}', (string) $parsed['content']);
+        self::assertStringContainsString('<p>т</p>', (string) $parsed['content']);
         self::assertFileDoesNotExist($this->tmpRoot . '/storage/neutral-style.css');
     }
 }
