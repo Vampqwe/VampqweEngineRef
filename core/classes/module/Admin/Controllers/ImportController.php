@@ -235,9 +235,6 @@ class ImportController
         foreach ($report['warnings'] as $warning) {
             $this->adminService->setFlash('warning', (string) $warning);
         }
-        if (!$report['styles_ok']) {
-            $this->adminService->setFlash('warning', 'Не удалось записать стили в storage/neutral-style.css');
-        }
 
         $this->session->remove(self::PREVIEW_KEY);
         $this->adminService->setFlash('success', 'Страница импортирована! ID: ' . $report['page_id']);

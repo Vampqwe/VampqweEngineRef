@@ -66,8 +66,7 @@ class PageImportWriter
      * @return array{
      *     page_id: int,
      *     row_reports: array<string,array{inserted:int,skipped:int,errors:string[]}>,
-     *     warnings: string[],
-     *     styles_ok: bool
+     *     warnings: string[]
      * }
      */
     public function write(array $parsed): array
@@ -118,7 +117,6 @@ class PageImportWriter
             'page_id' => $pageId,
             'row_reports' => $rowReports,
             'warnings' => $warnings,
-            'styles_ok' => true,
         ];
     }
 
