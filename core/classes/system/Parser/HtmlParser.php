@@ -89,6 +89,14 @@ class HtmlParser extends AbstractParser
         $this->seenImages = [];
         $this->schemaRecords = [];
 
+        // ⚠️ ПОБИТНЫЙ СРЕЗ ВЫПОЛНЯЕТСЯ ПО ОРИГИНАЛУ (без CRLF-нормализации):
+        // normalizeInput() приводит переносы к \n, и срез, снятый с
+        // нормализованной копии, байт-в-байт НЕ равен фрагменту исходного
+        // файла. Поэтому позиции маркеров для raw-среза ищем в оригинале,
+        // а нормализованная версия используется только для DOM-блоков
+        // (title/meta/xpath/schema/script) — им переносы не важны.
+        $originalContent = is_array($content) ? '' : $content;
+
         $sourceHtml = $this->normalizeInput($content);
 
         $doc = $this->loadHtml($sourceHtml);
@@ -191,15 +199,29 @@ class HtmlParser extends AbstractParser
         // «мусорных» тегов). Любая санитизация/обрезка ниже по потоку должна
         // обходить raw_slice стороной (см. PageImportWriter::prepareContent).
         if (($this->rules['content_raw'] ?? false) === true) {
-            $rawSlice = $this->rawMarkerSlice($sourceHtml, $this->blocks);
+            $rawSlice = $this->rawMarkerSlice($originalContent, $this->blocks);
             if ($rawSlice !== null) {
                 $values['content'] = $rawSlice;
                 $blockResults['main_content']['value'] = $rawSlice;
                 $blockResults['main_content']['found'] = trim($rawSlice) !== '';
                 $blockResults['main_content']['meta']['marker'] = 'raw_slice';
             } else {
-                $this->addWarning('Побитный режим (content_raw=true): маркеры основного'
-                    . ' контента не найдены — сохранён нормализованный вариант.');
+                // Маркеры не найдены в оригинале — последний шанс: срез по
+                // нормализованной копии (например, массив-вход без оригинала).
+                $rawSlice = $originalContent === ''
+                    ? $this->rawMarkerSlice($sourceHtml, $this->blocks)
+                    : null;
+                if ($rawSlice !== null) {
+                    $this->addWarning('Побитный режим: маркеры не найдены в оригинале — '
+                        . 'срез взят по нормализованной копии (переносы \\r\\n приведены к \\n).');
+                    $values['content'] = $rawSlice;
+                    $blockResults['main_content']['value'] = $rawSlice;
+                    $blockResults['main_content']['found'] = trim($rawSlice) !== '';
+                    $blockResults['main_content']['meta']['marker'] = 'raw_slice';
+                } else {
+                    $this->addWarning('Побитный режим (content_raw=true): маркеры основного'
+                        . ' контента не найдены — сохранён нормализованный вариант.');
+                }
             }
         }
 
@@ -554,6 +576,17 @@ class HtmlParser extends AbstractParser
         // маркеры). Обрезка «мусора» допускается только явным правилом
         // блока ('trim'/'transform') в конфиге — по умолчанию ничего
         // не удаляется. Правило рассчитано на доверенных лиц.
+
+        // Самопроверка побитности: срез обязан быть точной подстрокой
+        // переданного исходника. Если это не так (например, позиции
+        // посчитаны по другой копии файла) — побитный режим отказывается
+        // отдавать нормализованный/смещённый вариант: вернём null, и
+        // вызывающий код честно предупредит о деградации, а не молча
+        // испортит контент в БД.
+        if ($slice !== '' && strpos($html, $slice) === false) {
+            return null;
+        }
+
         return $slice;
     }
 
